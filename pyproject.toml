@@ -1,0 +1,68 @@
+[project]
+name = "oriahs"
+version = "0.1.0"
+description = "Hybrid search (PostgreSQL + Qdrant) MVP backend"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    "qdrant-client>=1.9.0",
+    "redis>=5.0.0",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.3.0",
+    "sentence-transformers>=3.0.0",
+    "prometheus-fastapi-instrumentator>=7.0.0",
+    "numpy>=1.26.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "testcontainers[postgres,redis]>=4.0.0",
+    "fakeredis>=2.23.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+warn_unused_configs = true
+mypy_path = "."
+
+[[tool.mypy.overrides]]
+module = ["sentence_transformers.*", "qdrant_client.*", "redis.*", "testcontainers.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "slow: long-running tests (embedding model load, docker-dependent).",
+]
+
+[tool.coverage.run]
+source = ["app"]
