@@ -11,13 +11,14 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.30",
     "asyncpg>=0.29.0",
     "alembic>=1.13.0",
-    "qdrant-client>=1.9.0",
+    "qdrant-client>=1.12,<1.13",
     "redis>=5.0.0",
     "pydantic>=2.8.0",
     "pydantic-settings>=2.3.0",
     "sentence-transformers>=3.0.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
     "numpy>=1.26.0",
+    "cachetools>=5.4.0",
 ]
 
 [dependency-groups]
@@ -47,7 +48,7 @@ select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
 ignore = ["E501"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 warn_unused_configs = true
@@ -60,6 +61,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "slow: long-running tests (embedding model load, docker-dependent).",
 ]

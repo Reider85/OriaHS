@@ -1,0 +1,32 @@
+# Qdrant collection declarative config (ARCHITECT §17.1, P-04).
+# Read by scripts/init_qdrant.py — never hardcode these in app code.
+collections:
+  - name: documents
+    vectors:
+      size: 1024
+      distance: Cosine
+    shard_number: 4
+    replication_factor: 2          # dev: override via QDRANT_REPLICATION_FACTOR=1
+    write_consistency: majority    # on MVP a single node; keep the contract
+    on_disk_payload: true
+    hnsw_config:
+      m: 16
+      ef_construct: 200
+      full_scan_threshold: 10000
+    optimizers_config:
+      default_segment_number: 4
+      indexing_threshold: 20000
+    quantization_config:
+      scalar:
+        type: int8
+        quantile: 0.99
+        always_ram: true
+    payload_indexes:
+      - { field: tenant_id,           type: keyword }
+      - { field: language,            type: keyword }
+      - { field: tags,                type: keyword }
+      - { field: attributes.category, type: keyword }
+      - { field: attributes.price,    type: float }
+      - { field: model_name,          type: keyword }
+      - { field: model_rev,           type: keyword }
+      - { field: created_at,          type: datetime }
