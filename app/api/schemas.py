@@ -1,6 +1,6 @@
 """Shared request/response models for the API (ARCHITECT §14.1, §14.2).
 
-P-07 adds the ``/index`` write-path models; P-11 will add the ``/search``
+P-07 adds the ``/index`` write-path models; P-11 adds the ``/search``
 models here. Status values are frozen here so the fast-path no-op is
 observable to clients instead of being a silent 201.
 """
@@ -10,6 +10,8 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.search.filters import SearchFilters
 
 
 class IndexRequest(BaseModel):
@@ -38,3 +40,64 @@ class IndexResponse(BaseModel):
     status: Literal["queued", "no_change"]
     indexed_at: datetime
     wait_for_index_token: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# P-11: Search read-path models (ARCHITECT §14.1, MVP subset)
+# ---------------------------------------------------------------------------
+
+
+class SearchRequest(BaseModel):
+    """Body of ``POST /search`` (ARCHITECT §14.1, MVP subset).
+
+    Fields deferred to Critical/Production-Ready are omitted:
+    ``rerank``, ``personalize``, ``diversify``, ``experiment_id``,
+    ``context``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(..., min_length=1, max_length=2048)
+    tenant_id: UUID
+    user_id: UUID | None = None  # accepted but ignored on MVP
+    filters: SearchFilters = Field(default_factory=SearchFilters)
+    top_k: int = Field(20, ge=1, le=100)
+    fusion: Literal["rrf"] = "rrf"  # only RRF on MVP (ARCHITECT §7.1)
+    explain: bool = False
+    timeout_ms: int = Field(200, ge=50, le=2000)
+
+
+class SearchHit(BaseModel):
+    """One fused search result returned to the client (ARCHITECT §14.1)."""
+
+    doc_id: UUID
+    score: float
+    title: str
+    snippet: str
+    attributes: dict[str, Any]
+    debug: dict[str, Any] | None = None
+
+
+class FacetBucket(BaseModel):
+    """A single bucket inside a facet aggregation (ARCHITECT §14.1).
+
+    Facets are empty on MVP — populated in the Critical phase.
+    """
+
+    value: str
+    count: int
+
+
+class SearchResponse(BaseModel):
+    """Response of ``POST /search`` (ARCHITECT §14.1, MVP subset).
+
+    ``facets`` is always empty on MVP. ``degraded`` is ``True`` when one
+    channel failed and results come from the surviving channel only.
+    """
+
+    hits: list[SearchHit]
+    facets: dict[str, list[FacetBucket]] = Field(default_factory=dict)
+    total_lexical: int
+    total_vector: int
+    latency_ms: int
+    degraded: bool = False

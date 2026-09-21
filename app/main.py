@@ -7,7 +7,7 @@ router. README documents how to run. P-12 replaces the root endpoint.
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from app.api.routes import health, index
+from app.api.routes import health, index, search
 from app.config import settings
 
 
@@ -21,6 +21,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(index.router)
+    app.include_router(search.router)
 
     @app.get("/", tags=["meta"])
     async def root() -> dict[str, str]:

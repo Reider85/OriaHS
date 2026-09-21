@@ -1,1 +1,1 @@
-"""Business-logic services layer (indexing first; search in P-11)."""
+"""Business-logic services layer (P-07 indexing, P-11 search orchestration)."""
