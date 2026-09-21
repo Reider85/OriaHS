@@ -59,6 +59,11 @@ mypy_path = "."
 module = ["sentence_transformers.*", "qdrant_client.*", "redis.*", "langdetect.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# torch's own sources trigger an internal error in mypy; analyse it as opaque.
+module = ["torch.*"]
+follow_imports = "skip"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

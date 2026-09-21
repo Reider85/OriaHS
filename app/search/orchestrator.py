@@ -16,6 +16,7 @@ Partial failures are handled gracefully:
 import asyncio
 import logging
 import time
+from typing import Any
 from uuid import UUID
 
 from qdrant_client import AsyncQdrantClient
@@ -107,8 +108,8 @@ class SearchOrchestrator:
 
         # Wait for both with the overall deadline
         pending: set[asyncio.Task[list[LexicalHit] | list[VectorHit]]] = {
-            lex_task,  # type: ignore[arg-type]
-            vec_task,  # type: ignore[arg-type]
+            lex_task,
+            vec_task,
         }
         while pending and time.monotonic() < deadline:
             done, pending = await asyncio.wait(
@@ -171,17 +172,17 @@ class SearchOrchestrator:
 
         # Build response hits
         # Build lookup for metadata (title/snippet/attributes) from either channel
-        meta: dict[UUID, tuple[str, str, dict]] = {}
-        for h in lex_hits:
-            meta.setdefault(h.doc_id, (h.title, h.content_snippet, {}))
-        for h in vec_hits:
-            meta.setdefault(h.doc_id, (h.title, h.content_snippet, {}))
+        meta: dict[UUID, tuple[str, str, dict[str, Any]]] = {}
+        for lex_hit in lex_hits:
+            meta.setdefault(lex_hit.doc_id, (lex_hit.title, lex_hit.content_snippet, {}))
+        for vec_hit in vec_hits:
+            meta.setdefault(vec_hit.doc_id, (vec_hit.title, vec_hit.content_snippet, {}))
 
         hits: list[SearchHit] = []
         top_k = min(req.top_k, len(fused))
         for doc_id, score in fused[:top_k]:
             title, snippet, attributes = meta.get(doc_id, ("", "", {}))
-            debug_info: dict | None = None
+            debug_info: dict[str, Any] | None = None
             if req.explain:
                 debug_info = {
                     "rrf_score": score,

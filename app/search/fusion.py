@@ -40,10 +40,10 @@ def rrf_fuse(
     list of ``(doc_id, rrf_score)`` sorted descending by score.
     """
     scores: dict[UUID, float] = defaultdict(float)
-    for rank, hit in enumerate(lex_hits, start=1):
-        scores[hit.doc_id] += 1.0 / (k + rank)
-    for rank, hit in enumerate(vec_hits, start=1):
-        scores[hit.doc_id] += 1.0 / (k + rank)
+    for rank, lex_hit in enumerate(lex_hits, start=1):
+        scores[lex_hit.doc_id] += 1.0 / (k + rank)
+    for rank, vec_hit in enumerate(vec_hits, start=1):
+        scores[vec_hit.doc_id] += 1.0 / (k + rank)
     return sorted(scores.items(), key=lambda x: -x[1])
 
 

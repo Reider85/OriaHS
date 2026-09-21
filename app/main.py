@@ -1,7 +1,8 @@
 """FastAPI application factory.
 
-P-00: minimal skeleton. Only a temporary root endpoint and stub health
-router. README documents how to run. P-12 replaces the root endpoint.
+P-12: real health/readiness endpoints plus Prometheus ``/metrics``. The
+temporary P-00 root endpoint is gone; ``/health/*`` and ``/metrics`` are
+excluded from HTTP instrumentation so probes do not pollute dashboards.
 """
 
 from fastapi import FastAPI
@@ -9,6 +10,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.routes import health, index, search
 from app.config import settings
+from app.observability import metrics  # noqa: F401 - registers index_lag_seconds
 
 
 def create_app() -> FastAPI:
@@ -23,12 +25,9 @@ def create_app() -> FastAPI:
     app.include_router(index.router)
     app.include_router(search.router)
 
-    @app.get("/", tags=["meta"])
-    async def root() -> dict[str, str]:
-        """Temporary root endpoint; removed in P-12."""
-        return {"status": "ok"}
-
-    Instrumentator().instrument(app).expose(
+    Instrumentator(
+        excluded_handlers=["/health", settings.observability.metrics_path]
+    ).instrument(app).expose(
         app,
         endpoint=settings.observability.metrics_path,
     )
