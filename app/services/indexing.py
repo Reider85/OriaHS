@@ -1,16 +1,18 @@
-"""Indexing write-path service (ARCHITECT §2.4, §4.2, §4.3; P-07).
+"""Indexing write-path service (ARCHITECT §2.4, §4.2, §4.3; P-07, P-08).
 
 Implements the transactional outbox pattern: INSERT into ``documents`` +
 INSERT into ``search_outbox`` atomically, then a best-effort XADD to the
 ``embeddings.queue`` Redis Stream. The ``content_hash`` fast-path (TRIZ-gate,
 ROADMAP §3.3) skips re-enqueueing when identical content is re-indexed.
+P-08 adds the idempotent ``soft_delete`` path with ``op='delete'``.
 """
 
 import hashlib
 import logging
-import uuid
+from uuid import UUID
 
 import redis.asyncio as aioredis
+from fastapi import HTTPException, status
 from langdetect import DetectorFactory, detect
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,7 +111,7 @@ class IndexingService:
         await outbox.add_upsert(session, doc_id, content_hash)
         await session.commit()
 
-        await self._enqueue_upsert(doc_id)
+        await self._enqueue("upsert", doc_id)
         return IndexResponse(
             doc_id=doc_id,
             status="queued",
@@ -117,19 +119,43 @@ class IndexingService:
             wait_for_index_token=str(doc_id),
         )
 
-    async def _enqueue_upsert(self, doc_id: uuid.UUID) -> None:
+    async def soft_delete(self, session: AsyncSession, doc_id: UUID) -> bool:
+        """Soft-delete a document and enqueue a ``delete`` sync (P-08).
+
+        Returns ``True`` when the document was actually soft-deleted and a new
+        outbox task was created, ``False`` when it was already deleted
+        (idempotent no-op, no new outbox row). Raises ``HTTPException`` 404
+        when no such document exists.
+        """
+        rowcount = await documents.soft_delete(session, doc_id)
+        if rowcount == 0:
+            existing = await documents.get_by_id(session, doc_id)
+            if existing is None or existing.deleted_at is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Document not found",
+                )
+            return False
+
+        await outbox.add_delete(session, doc_id)
+        await session.commit()
+
+        await self._enqueue("delete", doc_id)
+        return True
+
+    async def _enqueue(self, op: str, doc_id: UUID) -> None:
         """Publish to Redis Streams (best-effort; reconciler is the safety net)."""
         if self._redis is None:
             return
         try:
             await self._redis.xadd(
                 EMBEDDINGS_QUEUE_STREAM,
-                {"doc_id": str(doc_id), "op": "upsert"},
+                {"doc_id": str(doc_id), "op": op},
             )
         except Exception:  # noqa: BLE001 — Redis must not fail the request
             logger.warning(
                 "Failed to enqueue to Redis Streams; reconciler will catch up",
-                extra={"doc_id": str(doc_id)},
+                extra={"doc_id": str(doc_id), "op": op},
             )
 
 
