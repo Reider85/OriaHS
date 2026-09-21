@@ -12,7 +12,6 @@ SIGTERM/SIGINT completes the in-flight batch, then exits with code 0.
 """
 
 import asyncio
-import logging
 import signal
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
@@ -31,12 +30,25 @@ from app.db.session import async_session_factory
 from app.embedding.cache import EmbeddingCache, should_skip_upsert
 from app.embedding.service import EmbeddingService
 from app.observability import metrics
+from app.observability.logging import get_logger
 from app.search.qdrant_payload import QdrantPayload
 from app.services.qdrant import QdrantService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
+
+
+def _classify_qdrant_error(exc: Exception) -> str:
+    """Map an exception to a Prometheus error_type label."""
+    msg = str(exc).lower()
+    if "timeout" in msg:
+        return "timeout"
+    if "unavailable" in msg or "connection" in msg or "refused" in msg:
+        return "unavailable"
+    if "valid" in msg or "payload" in msg:
+        return "validation"
+    return "other"
 
 
 class ReconcilerWorker:
@@ -109,7 +121,17 @@ class ReconcilerWorker:
                     "Unhandled reconciler error while processing row",
                     extra={"outbox_id": row.id, "document_id": str(row.document_id)},
                 )
+        await self._refresh_dead_letter_count()
         return len(batch)
+
+    async def _refresh_dead_letter_count(self) -> None:
+        """Periodically refresh the dead_letter_count gauge (P-15)."""
+        try:
+            async with self._session_factory() as session:
+                count = await outbox_queries.count_dead(session)
+                metrics.dead_letter_count.set(count)
+        except Exception:  # noqa: BLE001 — gauge refresh must not crash the loop
+            logger.warning("Failed to refresh dead_letter_count gauge")
 
     async def _claim_batch(self) -> list[PendingOutboxRow]:
         """Fast-path existence check, then ``FOR UPDATE SKIP LOCKED`` claim."""
@@ -117,6 +139,9 @@ class ReconcilerWorker:
             metrics.index_lag_seconds.set(
                 await outbox_queries.index_lag_seconds(session)
             )
+            outbox_pending_count = await outbox_queries.count_pending(session)
+            metrics.outbox_pending_count.set(outbox_pending_count)
+            metrics.reconciler_batch_size.set(self._config.batch_size)
             if not await outbox_queries.has_pending(session):
                 return []
             batch = await outbox_queries.claim_pending(
@@ -158,6 +183,8 @@ class ReconcilerWorker:
             )
         except Exception as exc:  # noqa: BLE001 — every failure becomes retry/dead
             await session.rollback()
+            error_type = _classify_qdrant_error(exc)
+            metrics.qdrant_upsert_errors_total.labels(error_type=error_type).inc()
             attempts_now = row.attempts + 1
             if attempts_now >= self._config.max_attempts:
                 await outbox_queries.mark_dead(session, row.id, str(exc))
@@ -266,13 +293,9 @@ async def _main() -> None:
 
 
 if __name__ == "__main__":
-    # P-15 replaces this with the structured ``setup_logging()``; until then a
-    # minimal bootstrap is what makes the CLI emit "Reconciler started".
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        force=True,
-    )
+    from app.observability.logging import setup_logging
+
+    setup_logging(level=settings.observability.log_level)
     try:
         asyncio.run(_main())
     except KeyboardInterrupt:

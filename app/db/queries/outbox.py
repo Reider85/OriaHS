@@ -160,6 +160,14 @@ async def mark_dead(session: AsyncSession, outbox_id: int, error: str) -> None:
     )
 
 
+async def count_pending(session: AsyncSession) -> int:
+    """Count pending/failed rows for the ``outbox_pending_count`` gauge (P-16)."""
+    result = await session.execute(
+        text("SELECT count(*) FROM search_outbox WHERE status IN ('pending','failed')")
+    )
+    return int(result.scalar_one() or 0)
+
+
 async def index_lag_seconds(session: AsyncSession) -> float:
     """Age of the oldest pending/failed row (0 when the outbox is empty).
 
@@ -178,15 +186,25 @@ async def index_lag_seconds(session: AsyncSession) -> float:
     return float(lag)
 
 
+async def count_dead(session: AsyncSession) -> int:
+    """Count ``dead`` rows for the ``dead_letter_count`` gauge (P-15)."""
+    result = await session.execute(
+        text("SELECT count(*) FROM search_outbox WHERE status = 'dead'")
+    )
+    return int(result.scalar_one() or 0)
+
+
 __all__ = [
     "PendingOutboxRow",
     "add_upsert",
     "add_delete",
     "has_pending",
     "claim_pending",
+    "count_pending",
     "mark_in_progress_many",
     "mark_done",
     "mark_failed",
     "mark_dead",
     "index_lag_seconds",
+    "count_dead",
 ]

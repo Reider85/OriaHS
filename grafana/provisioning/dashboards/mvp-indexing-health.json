@@ -1,0 +1,147 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "MVP — Indexing Health",
+    "tags": ["mvp", "indexing", "health"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Index Throughput",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{handler=\"/index\",status=\"201\"}[1m])",
+            "legendFormat": "Successful index requests"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "red",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 5
+                },
+                {
+                  "color": "green",
+                  "value": 10
+                }
+              ]
+            },
+            "unit": "req/s"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Outbox Queue Depth",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "outbox_pending_count",
+            "legendFormat": "Pending/failed rows"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 100
+                },
+                {
+                  "color": "red",
+                  "value": 1000
+                }
+              ]
+            },
+            "unit": "none"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Qdrant Upsert Errors",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(qdrant_upsert_errors_total[5m]) by (error_type)",
+            "legendFormat": "{{error_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.1
+                },
+                {
+                  "color": "red",
+                  "value": 1
+                }
+              ]
+            },
+            "unit": "1/s"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Reconciler Batch Size",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "reconciler_batch_size",
+            "legendFormat": "Configured batch size"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 250
+                },
+                {
+                  "color": "red",
+                  "value": 500
+                }
+              ]
+            },
+            "unit": "none"
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s"
+  }
+}
