@@ -11,11 +11,15 @@ embedding models never serves stale vectors. Serialization is plain
 ``np.float32.tobytes()`` — never pickle.
 """
 
+from __future__ import annotations
+
 import hashlib
 from collections.abc import Awaitable, Callable
 
 import numpy as np
 import redis.asyncio as aioredis
+
+from app.observability import metrics
 
 CONTENT_HASH_TTL_SECONDS = 2592000  # 30 days
 QUERY_EMBEDDING_TTL_SECONDS = 3600  # 1 hour
@@ -57,9 +61,11 @@ class EmbeddingCache:
     async def get_by_content_hash(
         self, content_hash: str, model_name: str
     ) -> np.ndarray | None:
+        metrics.embedding_cache_requests_total.inc()
         raw = await self._redis.get(self._content_hash_key(content_hash, model_name))
         if raw is None:
             return None
+        metrics.embedding_cache_hits_total.inc()
         assert isinstance(raw, bytes)
         return _deserialize(raw)
 
@@ -79,6 +85,7 @@ class EmbeddingCache:
         if not items:
             return []
         keys = [self._content_hash_key(hash_, model) for hash_, model in items]
+        metrics.embedding_cache_requests_total.inc(len(items))
         raw_values = await self._redis.mget(keys)
         result: list[np.ndarray | None] = []
         for raw in raw_values:
@@ -87,12 +94,16 @@ class EmbeddingCache:
             else:
                 assert isinstance(raw, bytes)
                 result.append(_deserialize(raw))
+        hits = sum(1 for v in result if v is not None)
+        metrics.embedding_cache_hits_total.inc(hits)
         return result
 
     async def get_query_embedding(self, query: str, model_name: str) -> np.ndarray | None:
+        metrics.embedding_cache_requests_total.inc()
         raw = await self._redis.get(self._query_key(query, model_name))
         if raw is None:
             return None
+        metrics.embedding_cache_hits_total.inc()
         assert isinstance(raw, bytes)
         return _deserialize(raw)
 

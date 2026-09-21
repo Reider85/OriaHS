@@ -1,5 +1,7 @@
-"""Observability module (ARCHITECT §11, MVP P-12 skeleton).
+"""Observability module (ARCHITECT §11, P-15 full set).
 
-Full metric set + structured logging land in P-15; P-12 provides the
-health-check machinery and the ``index_lag_seconds`` scaffold gauge.
+Provides:
+- ``metrics.py`` — all 7 MVP Prometheus collectors (histogram, counters, gauges).
+- ``logging.py`` — structured JSON logger with request_id/tenant_id/trace_id.
+- ``health.py`` — readiness probes for PG, Qdrant, Redis and outbox lag.
 """

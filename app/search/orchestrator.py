@@ -26,6 +26,7 @@ from app.api.schemas import SearchHit, SearchRequest, SearchResponse
 from app.config import SearchConfig
 from app.embedding.cache import EmbeddingCache
 from app.embedding.service import EmbeddingService
+from app.observability import metrics
 from app.search.exceptions import QdrantTimeoutError, QdrantUnavailableError
 from app.search.fusion import rrf_fuse
 from app.search.lexical import LexicalHit, lexical_search
@@ -211,6 +212,10 @@ class SearchOrchestrator:
             )
 
         latency_ms = int((time.monotonic() - start) * 1000)
+
+        metrics.search_latency_ms.labels(
+            tenant_id=str(req.tenant_id), fusion=req.fusion
+        ).observe(latency_ms)
 
         return SearchResponse(
             hits=hits,

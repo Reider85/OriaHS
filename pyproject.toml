@@ -20,6 +20,7 @@ dependencies = [
     "numpy>=1.26.0",
     "cachetools>=5.4.0",
     "langdetect>=1.0.9",
+    "structlog>=24.0.0",
 ]
 
 [dependency-groups]
@@ -56,7 +57,7 @@ warn_unused_configs = true
 mypy_path = "."
 
 [[tool.mypy.overrides]]
-module = ["sentence_transformers.*", "qdrant_client.*", "redis.*", "langdetect.*"]
+module = ["sentence_transformers.*", "qdrant_client.*", "redis.*", "langdetect.*", "structlog.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

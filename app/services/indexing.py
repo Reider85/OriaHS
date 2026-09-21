@@ -8,7 +8,6 @@ P-08 adds the idempotent ``soft_delete`` path with ``op='delete'``.
 """
 
 import hashlib
-import logging
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -20,8 +19,9 @@ from app.api.schemas import IndexRequest, IndexResponse
 from app.db.models import Document
 from app.db.queries import documents, outbox
 from app.db.queries.embedding_models import get_default_model
+from app.observability.logging import get_logger, tenant_id_ctx
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # langdetect profiles are non-deterministic without a fixed seed (0 <= seed <= 8).
 DetectorFactory.seed = 0
@@ -61,63 +61,67 @@ class IndexingService:
         The whole dual-write runs in one transaction; the Redis XADD happens
         strictly after commit so a rollback cannot leave an orphan task.
         """
-        content_hash = self.content_hash(req.title, req.content)
-        language = req.language or self.detect_language(req.title, req.content)
+        token = tenant_id_ctx.set(str(req.tenant_id))
+        try:
+            content_hash = self.content_hash(req.title, req.content)
+            language = req.language or self.detect_language(req.title, req.content)
 
-        existing = await documents.get_by_tenant_external_ref(
-            session, req.tenant_id, req.external_ref
-        )
+            existing = await documents.get_by_tenant_external_ref(
+                session, req.tenant_id, req.external_ref
+            )
 
-        if existing is not None and existing.content_hash == content_hash:
+            if existing is not None and existing.content_hash == content_hash:
+                return IndexResponse(
+                    doc_id=existing.id,
+                    status="no_change",
+                    indexed_at=existing.created_at,
+                    wait_for_index_token=str(existing.id),
+                )
+
+            if existing is not None:
+                await documents.update_content(
+                    session,
+                    existing.id,
+                    title=req.title,
+                    content=req.content,
+                    language=language,
+                    tags=req.tags,
+                    attributes=req.attributes,
+                    content_hash=content_hash,
+                )
+                doc_id = existing.id
+                created_at = existing.created_at
+            else:
+                model = await get_default_model(session)
+                document = Document(
+                    tenant_id=req.tenant_id,
+                    external_ref=req.external_ref,
+                    title=req.title,
+                    content=req.content,
+                    language=language,
+                    tags=req.tags,
+                    attributes=req.attributes,
+                    embedding_model=model.name,
+                    embedding_rev=_EMBEDDING_REV,
+                    content_hash=content_hash,
+                )
+                await documents.add(session, document)
+                await session.flush()  # materialise the server-default document UUID
+                doc_id = document.id
+                created_at = document.created_at
+
+            await outbox.add_upsert(session, doc_id, content_hash)
+            await session.commit()
+
+            await self._enqueue("upsert", doc_id)
             return IndexResponse(
-                doc_id=existing.id,
-                status="no_change",
-                indexed_at=existing.created_at,
-                wait_for_index_token=str(existing.id),
+                doc_id=doc_id,
+                status="queued",
+                indexed_at=created_at,
+                wait_for_index_token=str(doc_id),
             )
-
-        if existing is not None:
-            await documents.update_content(
-                session,
-                existing.id,
-                title=req.title,
-                content=req.content,
-                language=language,
-                tags=req.tags,
-                attributes=req.attributes,
-                content_hash=content_hash,
-            )
-            doc_id = existing.id
-            created_at = existing.created_at
-        else:
-            model = await get_default_model(session)
-            document = Document(
-                tenant_id=req.tenant_id,
-                external_ref=req.external_ref,
-                title=req.title,
-                content=req.content,
-                language=language,
-                tags=req.tags,
-                attributes=req.attributes,
-                embedding_model=model.name,
-                embedding_rev=_EMBEDDING_REV,
-                content_hash=content_hash,
-            )
-            await documents.add(session, document)
-            await session.flush()  # materialise the server-default document UUID
-            doc_id = document.id
-            created_at = document.created_at
-
-        await outbox.add_upsert(session, doc_id, content_hash)
-        await session.commit()
-
-        await self._enqueue("upsert", doc_id)
-        return IndexResponse(
-            doc_id=doc_id,
-            status="queued",
-            indexed_at=created_at,
-            wait_for_index_token=str(doc_id),
-        )
+        finally:
+            tenant_id_ctx.reset(token)
 
     async def soft_delete(self, session: AsyncSession, doc_id: UUID) -> bool:
         """Soft-delete a document and enqueue a ``delete`` sync (P-08).
