@@ -93,6 +93,7 @@ class ReconcilerConfig(BaseSettings):
     base_backoff_seconds: int = 10
     max_backoff_seconds: int = 3600
     digest_interval_minutes: int = 60
+    parallelism: int = 10
 
 
 class ObservabilityConfig(BaseSettings):
