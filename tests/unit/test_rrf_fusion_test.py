@@ -149,3 +149,47 @@ class TestWeightedFuse:
         scores = {doc_id: s for doc_id, s in result}
         assert math.isclose(scores[d1], 0.0, abs_tol=1e-9)
         assert math.isclose(scores[d2], 1.0, abs_tol=1e-9)
+
+    def test_symmetry(self) -> None:
+        """weighted_fuse(lex, vec, alpha) should have same ordering as weighted_fuse(vec, lex, 1-alpha)."""
+        d1, d2, d3 = uuid4(), uuid4(), uuid4()
+        lex = [_lex(d1, score=10.0), _lex(d2, score=5.0)]
+        vec = [_vec(d3, score=0.9), _vec(d1, score=0.7)]
+        
+        result1 = weighted_fuse(lex, vec, alpha=0.3)
+        result2 = weighted_fuse(vec, lex, alpha=0.7)
+        
+        # Should have same ordering by doc_id
+        ids1 = [doc_id for doc_id, _ in result1]
+        ids2 = [doc_id for doc_id, _ in result2]
+        assert ids1 == ids2
+
+    def test_outlier_sensitivity(self) -> None:
+        """Weighted fusion is sensitive to outliers due to min-max normalization."""
+        d1, d2, d3, d4 = uuid4(), uuid4(), uuid4(), uuid4()
+        # Lex scores: [0.1, 0.2, 0.3, 100.0] → outlier at 100.0
+        lex = [_lex(d1, score=0.1), _lex(d2, score=0.2), _lex(d3, score=0.3), _lex(d4, score=100.0)]
+        # Vec scores: [0.5, 0.6, 0.7, 0.8] → no outliers
+        vec = [_vec(d1, score=0.5), _vec(d2, score=0.6), _vec(d3, score=0.7), _vec(d4, score=0.8)]
+        
+        result = weighted_fuse(lex, vec, alpha=0.5)
+        scores = {doc_id: s for doc_id, s in result}
+        
+        # d4 (outlier) gets very high weight from lex: (100-0.1)/(100-0.1) ≈ 1.0
+        # d1, d2, d3 get low lex weights: (0.1-0.1)/99.9≈0, (0.2-0.1)/99.9≈0.001, (0.3-0.1)/99.9≈0.002
+        # d4 should dominate despite being worst in vec channel
+        assert result[0][0] == d4  # outlier is first
+        assert scores[d4] > 0.9  # very high score
+
+    def test_equal_scores_division_by_zero(self) -> None:
+        """All equal scores should normalize to 0.0 with rng=1.0 protection."""
+        d1, d2, d3 = uuid4(), uuid4(), uuid4()
+        lex = [_lex(d1, score=5.0), _lex(d2, score=5.0)]
+        vec = [_vec(d1, score=5.0), _vec(d3, score=5.0)]
+        
+        result = weighted_fuse(lex, vec, alpha=0.5)
+        scores = {doc_id: s for doc_id, s in result}
+        
+        # All scores should be 0.0 because rng = 5.0 - 5.0 = 0 → rng = 1.0
+        # All normalized = (5.0 - 5.0) / 1.0 = 0.0
+        assert all(math.isclose(s, 0.0, abs_tol=1e-9) for s in scores.values())

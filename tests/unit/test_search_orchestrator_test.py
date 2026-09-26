@@ -237,3 +237,41 @@ class TestSearchOrchestrator:
         # d1 should appear once, with RRF-summed score
         doc_ids = [h.doc_id for h in resp.hits]
         assert doc_ids.count(d1) == 1
+
+    @pytest.mark.asyncio
+    @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
+    @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
+    async def test_weighted_fusion_dispatch(self, mock_lex, mock_vec, orchestrator):
+        """Test that fusion='weighted' calls weighted_fuse, not rrf_fuse."""
+        d1, d2 = uuid4(), uuid4()
+        mock_lex.return_value = [_lex_hit(d1, score=1.5), _lex_hit(d2, score=1.0)]
+        mock_vec.return_value = [_vec_hit(d1, score=0.9), _vec_hit(d2, score=0.8)]
+
+        req = _make_request(fusion="weighted", fusion_alpha=0.7)
+        resp = await orchestrator.search(req)
+
+        assert isinstance(resp, SearchResponse)
+        assert resp.total_lexical == 2
+        assert resp.total_vector == 2
+        # Should have weighted fusion results (not RRF)
+        assert len(resp.hits) <= req.top_k
+
+    @pytest.mark.asyncio
+    @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
+    @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
+    async def test_explain_with_weighted_fusion(self, mock_lex, mock_vec, orchestrator):
+        """Test explain mode includes weighted fusion debug info."""
+        d1 = uuid4()
+        mock_lex.return_value = [_lex_hit(d1, score=1.5)]
+        mock_vec.return_value = [_vec_hit(d1, score=0.9)]
+
+        req = _make_request(fusion="weighted", fusion_alpha=0.7, explain=True)
+        resp = await orchestrator.search(req)
+
+        assert len(resp.hits) == 1
+        debug = resp.hits[0].debug
+        assert debug is not None
+        assert debug["fusion_strategy"] == "weighted"
+        assert debug["fusion_alpha"] == 0.7
+        assert debug["weighted_score"] is not None
+        assert debug["rrf_score"] is None  # Should be None for weighted fusion

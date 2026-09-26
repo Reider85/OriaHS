@@ -28,7 +28,7 @@ from app.embedding.cache import EmbeddingCache
 from app.embedding.service import EmbeddingService
 from app.observability import metrics
 from app.search.exceptions import QdrantTimeoutError, QdrantUnavailableError
-from app.search.fusion import rrf_fuse
+from app.search.fusion import rrf_fuse, weighted_fuse
 from app.search.lexical import LexicalHit, lexical_search
 from app.search.vector import VectorHit, vector_search
 
@@ -169,7 +169,10 @@ class SearchOrchestrator:
             )
 
         # Fusion
-        fused = rrf_fuse(lex_hits, vec_hits, k=self._config.rrf_k)
+        if req.fusion == "weighted":
+            fused = weighted_fuse(lex_hits, vec_hits, alpha=req.fusion_alpha)
+        else:
+            fused = rrf_fuse(lex_hits, vec_hits, k=self._config.rrf_k)
 
         # Build response hits
         # Build lookup for metadata (title/snippet/attributes) from either channel
@@ -186,7 +189,10 @@ class SearchOrchestrator:
             debug_info: dict[str, Any] | None = None
             if req.explain:
                 debug_info = {
-                    "rrf_score": score,
+                    "fusion_strategy": req.fusion,
+                    "fusion_alpha": req.fusion_alpha if req.fusion == "weighted" else None,
+                    "rrf_score": score if req.fusion == "rrf" else None,
+                    "weighted_score": score if req.fusion == "weighted" else None,
                     "lexical_rank": next(
                         (i for i, h in enumerate(lex_hits, 1) if h.doc_id == doc_id), None
                     ),
