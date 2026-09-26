@@ -106,6 +106,73 @@ class ObservabilityConfig(BaseSettings):
     log_level: str = "INFO"
 
 
+class RerankerConfig(BaseSettings):
+    """Cross-encoder reranker settings (ARCHITECT §7.3, §17.2)."""
+
+    model_config = SettingsConfigDict(env_prefix="RERANKER_", env_file=".env", extra="ignore")
+
+    model_name: str = "BAAI/bge-reranker-v2-m3"
+    batch_size: int = Field(default=32, ge=1)
+    max_length: int = Field(default=512, ge=1)
+    device: str = "auto"  # "auto" | "cuda" | "cpu"
+    mock_mode: bool = False
+    timeout_ms: int = Field(default=500, ge=1)
+    speculative_top_n: int = Field(default=10, ge=1)
+    speculative_enabled: bool = True
+
+
+class CircuitBreakerConfig(BaseSettings):
+    """Circuit breaker settings for reranker (ARCHITECT §6.6, §17.2)."""
+
+    model_config = SettingsConfigDict(env_prefix="CIRCUIT_BREAKER_", env_file=".env", extra="ignore")
+
+    error_rate_threshold: float = Field(default=0.05, ge=0.0, le=1.0)
+    latency_p95_threshold_ms: int = Field(default=500, ge=1)
+    window_seconds: int = Field(default=60, ge=1)
+    cooldown_seconds: int = Field(default=60, ge=1)
+
+
+class EvalConfig(BaseSettings):
+    """Offline evaluation settings (ARCHITECT §11.5, §17.2)."""
+
+    model_config = SettingsConfigDict(env_prefix="EVAL_", env_file=".env", extra="ignore")
+
+    dataset_path: str = "eval/datasets/baseline_v1.jsonl"
+    baselines_dir: str = "eval/baselines/"
+    recall_regression_threshold: float = Field(default=0.02, ge=0.0)
+    ndcg_regression_threshold: float = Field(default=0.01, ge=0.0)
+    cron: str = "0 2 * * *"  # nightly at 02:00 UTC
+
+
+class PushdownConfig(BaseSettings):
+    """Push-down filter settings (ARCHITECT §8.2, §17.2)."""
+
+    model_config = SettingsConfigDict(env_prefix="PUSHDOWN_", env_file=".env", extra="ignore")
+
+    selectivity_threshold: float = Field(default=0.1, ge=0.0, le=1.0)
+    max_candidate_ids: int = Field(default=5000, ge=1)
+
+
+class ThrottleConfig(BaseSettings):
+    """Throttling settings (ARCHITECT §4.6, §17.2)."""
+
+    model_config = SettingsConfigDict(env_prefix="THROTTLE_", env_file=".env", extra="ignore")
+
+    pending_warn_threshold: int = Field(default=50000, ge=1)
+    pending_reindex_threshold: int = Field(default=100000, ge=1)
+
+
+class FeatureFlags(BaseSettings):
+    """Feature flags for Critical phase components (ARCHITECT §17.2)."""
+
+    model_config = SettingsConfigDict(env_prefix="", env_file=".env", extra="ignore")
+
+    vector_search_enabled: bool = True
+    rerank_enabled: bool = True
+    weighted_fusion_enabled: bool = True
+    pushdown_enabled: bool = True
+
+
 class AppConfig(BaseSettings):
     """Root settings bundle. Priority: OS env > .env."""
 
@@ -128,6 +195,12 @@ class AppConfig(BaseSettings):
     search: Annotated[SearchConfig, Field(default_factory=SearchConfig)]
     reconciler: Annotated[ReconcilerConfig, Field(default_factory=ReconcilerConfig)]
     observability: Annotated[ObservabilityConfig, Field(default_factory=ObservabilityConfig)]
+    reranker: Annotated[RerankerConfig, Field(default_factory=RerankerConfig)]
+    circuit_breaker: Annotated[CircuitBreakerConfig, Field(default_factory=CircuitBreakerConfig)]
+    eval: Annotated[EvalConfig, Field(default_factory=EvalConfig)]
+    pushdown: Annotated[PushdownConfig, Field(default_factory=PushdownConfig)]
+    throttle: Annotated[ThrottleConfig, Field(default_factory=ThrottleConfig)]
+    feature_flags: Annotated[FeatureFlags, Field(default_factory=FeatureFlags)]
 
 
 @lru_cache

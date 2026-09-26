@@ -34,6 +34,7 @@ class IndexResponse(BaseModel):
     ``status`` is ``"queued"`` when a new outbox task was created and
     ``"no_change"`` when the fast-path re-index of identical content was
     skipped. ``"indexed"/"throttled"`` ship in the Critical phase.
+    ``wait_for_index_token`` is used for polling index status in Critical.
     """
 
     doc_id: UUID
@@ -51,8 +52,7 @@ class SearchRequest(BaseModel):
     """Body of ``POST /search`` (ARCHITECT §14.1, MVP subset).
 
     Fields deferred to Critical/Production-Ready are omitted:
-    ``rerank``, ``personalize``, ``diversify``, ``experiment_id``,
-    ``context``.
+    ``personalize``, ``diversify``, ``experiment_id``, ``context``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -62,7 +62,9 @@ class SearchRequest(BaseModel):
     user_id: UUID | None = None  # accepted but ignored on MVP
     filters: SearchFilters = Field(default_factory=SearchFilters)
     top_k: int = Field(20, ge=1, le=100)
-    fusion: Literal["rrf"] = "rrf"  # only RRF on MVP (ARCHITECT §7.1)
+    fusion: Literal["rrf", "weighted"] = "rrf"  # RRF + weighted in Critical
+    rerank: bool = False  # cross-encoder rerank in Critical
+    fusion_alpha: float = Field(0.5, ge=0.0, le=1.0)  # for weighted fusion
     explain: bool = False
     timeout_ms: int = Field(200, ge=50, le=2000)
 

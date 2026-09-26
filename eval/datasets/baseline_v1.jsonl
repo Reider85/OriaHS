@@ -1,0 +1,100 @@
+{"query_id": "q001", "query": "как настроить гибридный поиск", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440001", "550e8400-e29b-41d4-a716-446655440002"], "language": "ru"}
+{"query_id": "q002", "query": "embedding models comparison", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440003"], "language": "en"}
+{"query_id": "q003", "query": "fastapi async patterns", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440004"], "language": "en"}
+{"query_id": "q004", "query": "postgresql vector extension", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440005"], "language": "en"}
+{"query_id": "q005", "query": "qdrant configuration best practices", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440006"], "language": "en"}
+{"query_id": "q006", "query": "redis cache strategies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440007"], "language": "en"}
+{"query_id": "q007", "query": "alembic migration patterns", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440008"], "language": "en"}
+{"query_id": "q008", "query": "pydantic settings validation", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440009"], "language": "en"}
+{"query_id": "q009", "query": "sentence transformers usage", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440010"], "language": "en"}
+{"query_id": "q010", "query": "hybrid search architecture", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440011"], "language": "en"}
+{"query_id": "q011", "query": "cross-encoder reranker", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440012"], "language": "en"}
+{"query_id": "q012", "query": "weighted fusion algorithm", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440013"], "language": "en"}
+{"query_id": "q013", "query": "circuit breaker pattern", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440014"], "language": "en"}
+{"query_id": "q014", "query": "speculative rerank optimization", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440015"], "language": "en"}
+{"query_id": "q015", "query": "offline evaluation metrics", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440016"], "language": "en"}
+{"query_id": "q016", "query": "pushdown filters performance", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440017"], "language": "en"}
+{"query_id": "q017", "query": "adaptive throttling", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440018"], "language": "en"}
+{"query_id": "q018", "query": "degraded mode fallback", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440019"], "language": "en"}
+{"query_id": "q019", "query": "observability metrics dashboard", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440020"], "language": "en"}
+{"query_id": "q020", "query": "grafana dashboard configuration", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440021"], "language": "en"}
+{"query_id": "q021", "query": "triz principles in software", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440022"], "language": "en"}
+{"query_id": "q022", "query": "roadmap planning methodology", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440023"], "language": "en"}
+{"query_id": "q023", "query": "mvp critical phase differences", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440024"], "language": "en"}
+{"query_id": "q024", "query": "production ready features", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440025"], "language": "en"}
+{"query_id": "q025", "query": "error handling patterns", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440026"], "language": "en"}
+{"query_id": "q026", "query": "logging best practices", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440027"], "language": "en"}
+{"query_id": "q027", "query": "testing strategies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440028"], "language": "en"}
+{"query_id": "q028", "query": "performance optimization", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440029"], "language": "en"}
+{"query_id": "q029", "query": "scalability patterns", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440030"], "language": "en"}
+{"query_id": "q030", "query": "monitoring alerting setup", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440031"], "language": "en"}
+{"query_id": "q031", "query": "container orchestration", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440032"], "language": "en"}
+{"query_id": "q032", "query": "security considerations", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440033"], "language": "en"}
+{"query_id": "q033", "query": "data backup strategies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440034"], "language": "en"}
+{"query_id": "q034", "query": "disaster recovery plan", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440035"], "language": "en"}
+{"query_id": "q035", "query": "cost optimization", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440036"], "language": "en"}
+{"query_id": "q036", "query": "multi-tenant architecture", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440037"], "language": "en"}
+{"query_id": "q037", "query": "tenant isolation patterns", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440038"], "language": "en"}
+{"query_id": "q038", "query": "data partitioning strategies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440039"], "language": "en"}
+{"query_id": "q039", "query": "indexing optimization", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440040"], "language": "en"}
+{"query_id": "q040", "query": "query performance tuning", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440041"], "language": "en"}
+{"query_id": "q041", "query": "caching strategies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440042"], "language": "en"}
+{"query_id": "q042", "query": "load balancing", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440043"], "language": "en"}
+{"query_id": "q043", "query": "auto scaling configuration", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440044"], "language": "en"}
+{"query_id": "q044", "query": "service mesh patterns", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440045"], "language": "en"}
+{"query_id": "q045", "query": "api gateway configuration", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440046"], "language": "en"}
+{"query_id": "q046", "query": "rate limiting implementation", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440047"], "language": "en"}
+{"query_id": "q047", "query": "authentication authorization", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440048"], "language": "en"}
+{"query_id": "q048", "query": "jwt token management", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440049"], "language": "en"}
+{"query_id": "q049", "query": "oauth2 integration", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440050"], "language": "en"}
+{"query_id": "q050", "query": "rbac implementation", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440051"], "language": "en"}
+{"query_id": "q051", "query": "data encryption methods", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440052"], "language": "en"}
+{"query_id": "q052", "query": "ssl certificate management", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440053"], "language": "en"}
+{"query_id": "q053", "query": "network security practices", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440054"], "language": "en"}
+{"query_id": "q054", "query": "vulnerability scanning", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440055"], "language": "en"}
+{"query_id": "q055", "query": "penetration testing", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440056"], "language": "en"}
+{"query_id": "q056", "query": "compliance frameworks", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440057"], "language": "en"}
+{"query_id": "q057", "query": "audit logging setup", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440058"], "language": "en"}
+{"query_id": "q058", "query": "data governance policies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440059"], "language": "en"}
+{"query_id": "q059", "query": "privacy protection measures", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440060"], "language": "en"}
+{"query_id": "q060", "query": "gdpr compliance checklist", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440061"], "language": "en"}
+{"query_id": "q061", "query": "data retention policies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440062"], "language": "en"}
+{"query_id": "q062", "query": "data anonymization techniques", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440063"], "language": "en"}
+{"query_id": "q063", "query": "data masking strategies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440064"], "language": "en"}
+{"query_id": "q064", "query": "data classification framework", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440065"], "language": "en"}
+{"query_id": "q065", "query": "data lineage tracking", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440066"], "language": "en"}
+{"query_id": "q066", "query": "data quality metrics", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440067"], "language": "en"}
+{"query_id": "q067", "query": "data validation rules", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440068"], "language": "en"}
+{"query_id": "q068", "query": "data transformation pipelines", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440069"], "language": "en"}
+{"query_id": "q069", "query": "data integration patterns", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440070"], "language": "en"}
+{"query_id": "q070", "query": "data migration strategies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440071"], "language": "en"}
+{"query_id": "q071", "query": "data synchronization methods", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440072"], "language": "en"}
+{"query_id": "q072", "query": "data replication techniques", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440073"], "language": "en"}
+{"query_id": "q073", "query": "data backup automation", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440074"], "language": "en"}
+{"query_id": "q074", "query": "data recovery procedures", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440075"], "language": "en"}
+{"query_id": "q075", "query": "data lifecycle management", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440076"], "language": "en"}
+{"query_id": "q076", "query": "data archival strategies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440077"], "language": "en"}
+{"query_id": "q077", "query": "data restoration processes", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440078"], "language": "en"}
+{"query_id": "q078", "query": "data integrity checks", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440079"], "language": "en"}
+{"query_id": "q079", "query": "data consistency validation", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440080"], "language": "en"}
+{"query_id": "q080", "query": "data corruption prevention", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440081"], "language": "en"}
+{"query_id": "q081", "query": "data recovery testing", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440082"], "language": "en"}
+{"query_id": "q082", "query": "data redundancy planning", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440083"], "language": "en"}
+{"query_id": "q083", "query": "data failover mechanisms", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440084"], "language": "en"}
+{"query_id": "q084", "query": "data load balancing", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440085"], "language": "en"}
+{"query_id": "q085", "query": "data partitioning techniques", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440086"], "language": "en"}
+{"query_id": "q086", "query": "data sharding strategies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440087"], "language": "en"}
+{"query_id": "q087", "query": "data distribution methods", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440088"], "language": "en"}
+{"query_id": "q088", "query": "data aggregation techniques", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440089"], "language": "en"}
+{"query_id": "q089", "query": "data summarization methods", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440090"], "language": "en"}
+{"query_id": "q090", "query": "data compression algorithms", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440091"], "language": "en"}
+{"query_id": "q091", "query": "data encryption standards", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440092"], "language": "en"}
+{"query_id": "q092", "query": "data hashing functions", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440093"], "language": "en"}
+{"query_id": "q093", "query": "data signature verification", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440094"], "language": "en"}
+{"query_id": "q094", "query": "data certificate management", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440095"], "language": "en"}
+{"query_id": "q095", "query": "data key rotation", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440096"], "language": "en"}
+{"query_id": "q096", "query": "data access control", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440097"], "language": "en"}
+{"query_id": "q097", "query": "data authorization mechanisms", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440098"], "language": "en"}
+{"query_id": "q098", "query": "data authentication methods", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440099"], "language": "en"}
+{"query_id": "q099", "query": "data identity verification", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440100"], "language": "en"}
+{"query_id": "q100", "query": "data security policies", "tenant_id": "550e8400-e29b-41d4-a716-446655440000", "relevant_doc_ids": ["550e8400-e29b-41d4-a716-446655440101"], "language": "en"}

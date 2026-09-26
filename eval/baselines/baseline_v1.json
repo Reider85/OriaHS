@@ -1,0 +1,17 @@
+{
+  "rrf": {
+    "recall@10": 0.42,
+    "ndcg@10": 0.38,
+    "mrr": 0.51
+  },
+  "weighted": {
+    "recall@10": 0.0,
+    "ndcg@10": 0.0,
+    "mrr": 0.0
+  },
+  "weighted+rerank": {
+    "recall@10": 0.0,
+    "ndcg@10": 0.0,
+    "mrr": 0.0
+  }
+}
