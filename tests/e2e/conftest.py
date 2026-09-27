@@ -8,7 +8,7 @@ import asyncio
 import hashlib
 import time
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, Callable
 from uuid import UUID, uuid4
 
 import httpx
@@ -233,3 +233,136 @@ def validate_dod_criteria_6(first_response: dict, second_response: dict):
     # Same content should return same doc_id with "no_change" status
     assert first_response["doc_id"] == second_response["doc_id"]
     assert second_response["status"] == "no_change"
+
+
+# ===== CRITICAL PHASE FIXTURES AND UTILITIES =====
+
+@pytest.fixture(scope="session", autouse=True)
+async def truncate_critical_tables(engine):
+    """Truncate critical tables between E2E tests to prevent cross-test pollution."""
+    yield  # Test runs here
+    
+    # Clean up after test
+    async with engine.begin() as conn:
+        tables_to_truncate = [
+            "documents",
+            "search_outbox", 
+            "search_outbox_dead_digest",
+            "eval_results",
+            "eval_datasets"
+        ]
+        
+        # Truncate tables in reverse dependency order
+        for table in reversed(tables_to_truncate):
+            await conn.execute(f"TRUNCATE TABLE {table} CASCADE")
+
+
+@pytest.fixture
+def sample_critical_index_data():
+    """Generate sample data for Critical phase testing with varied tags/categories."""
+    def _create_batch(count: int = 50, tenant_id: UUID = None):
+        if tenant_id is None:
+            tenant_id = uuid4()
+        
+        documents = []
+        for i in range(count):
+            # Create varied content for push-down testing
+            category = "ML" if i % 10 == 0 else "general"  # 10% ML category
+            tags = ["tech", f"category_{category}"] + ([f"priority_{i % 3}"] if i % 3 == 0 else [])
+            
+            data = {
+                "tenant_id": str(tenant_id),
+                "external_ref": f"critical-doc-{i}",
+                "title": f"Critical Test Document {i}",
+                "content": f"This is a test document for Critical phase validation. Document {i} in category {category}.",
+                "tags": tags,
+                "attributes": {
+                    "category": category,
+                    "priority": "high" if i % 5 == 0 else "normal",
+                    "created_at": f"2026-01-{15 + (i % 15)}"  # Various dates
+                }
+            }
+            documents.append(data)
+        return documents
+    
+    return _create_batch
+
+
+@pytest.fixture
+async def reranker_service_mock_override(wired_app):
+    """Override the reranker service with mock mode for testing without GPU."""
+    _, client = wired_app
+    
+    # This would normally be done through dependency injection overrides
+    # For now, we'll use the existing mock service from root conftest
+    from tests.conftest import reranker_service_mock
+    return reranker_service_mock
+
+
+async def poll_until(predicate: Callable[[], bool], timeout: int = 60, interval: int = 2) -> None:
+    """Poll until predicate returns True or timeout is reached.
+    
+    Replaces time.sleep loops with proper async polling.
+    
+    Args:
+        predicate: Function that returns True when condition is met
+        timeout: Maximum time to wait in seconds
+        interval: Polling interval in seconds
+    """
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        if predicate():
+            return
+        await asyncio.sleep(interval)
+    
+    raise TimeoutError(f"Polling did not complete within {timeout} seconds")
+
+
+def inject_reranker_errors(reranker_service, error_rate: float = 0.05):
+    """Inject errors into reranker service for circuit breaker testing.
+    
+    Args:
+        reranker_service: The reranker service to modify
+        error_rate: Fraction of calls that should fail (0.0 to 1.0)
+    """
+    original_rerank = reranker_service.rerank
+    
+    async def mock_rerank_with_errors(*args, **kwargs):
+        import random
+        if random.random() < error_rate:
+            from app.reranker.exceptions import RerankerUnavailableException
+            raise RerankerUnavailableException("Injected error for testing")
+        return await original_rerank(*args, **kwargs)
+    
+    reranker_service.rerank = mock_rerank_with_errors
+    return reranker_service
+
+
+class E2ETestClientCritical(E2ETestClient):
+    """Extended E2E test client with Critical phase-specific methods."""
+    
+    async def search_with_rerank(self, query: dict, rerank: bool = True):
+        """Search with rerank enabled."""
+        query["rerank"] = rerank
+        return await self.search_documents(query)
+    
+    async def search_with_fusion(self, query: dict, fusion: str = "rrf", alpha: float = 0.5):
+        """Search with specific fusion strategy."""
+        query["fusion"] = fusion
+        query["fusion_alpha"] = alpha
+        return await self.search_documents(query)
+    
+    async def search_with_facets(self, query: dict, facets: list[str] = None):
+        """Search with facets enabled."""
+        if facets:
+            query["facets"] = facets
+        return await self.search_documents(query)
+    
+    async def index_batch(self, documents: list[dict]) -> list[dict]:
+        """Index multiple documents and return responses."""
+        responses = []
+        for doc in documents:
+            response = await self.index_document(doc)
+            responses.append(response)
+        return responses
