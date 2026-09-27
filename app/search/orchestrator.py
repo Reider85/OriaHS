@@ -63,6 +63,7 @@ from app.search.facets import compute_facets
 from app.search.lexical import LexicalHit, lexical_search
 from app.search.speculative import SpeculativeReranker
 from app.search.vector import VectorHit, vector_search
+from app.observability import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ class SearchOrchestrator:
         speculative_reranker: SpeculativeReranker | None = None,
         reranker_config: RerankerConfig | None = None,
         feature_flags: FeatureFlags | None = None,
+        qdrant_health_check: bool = True,
     ) -> None:
         self._session = session
         self._qdrant = qdrant_client
@@ -144,6 +146,7 @@ class SearchOrchestrator:
         self._speculative = speculative_reranker
         self._reranker_config = reranker_config or RerankerConfig()
         self._flags = feature_flags or FeatureFlags()
+        self._qdrant_health_check = qdrant_health_check
 
     async def search(self, req: SearchRequest) -> SearchResponse:
         """Execute the full search pipeline: channels → fusion → rerank.
@@ -154,8 +157,39 @@ class SearchOrchestrator:
         start = time.monotonic()
         deadline = start + req.timeout_ms / 1000.0
 
+        # Check if vector search should be disabled
+        vector_disabled = False
+        if not self._flags.vector_search_enabled:
+            logger.warning("Vector search disabled via feature flag, using lexical only")
+            vector_disabled = True
+            metrics.search_degraded_total.labels(reason="vector_disabled").inc()
+        
+        # Check Qdrant health if enabled
+        qdrant_unavailable = False
+        if self._qdrant_health_check and self._flags.vector_search_enabled:
+            try:
+                is_healthy = await asyncio.wait_for(
+                    self._qdrant.get_collection_info("documents"),
+                    timeout=0.1
+                )
+                if not is_healthy:
+                    logger.warning("Qdrant health check failed, using lexical only")
+                    qdrant_unavailable = True
+                    metrics.search_degraded_total.labels(reason="qdrant_unavailable").inc()
+            except Exception:
+                logger.warning("Qdrant health check failed, using lexical only")
+                qdrant_unavailable = True
+                metrics.search_degraded_total.labels(reason="qdrant_unavailable").inc()
+
+        # Create tasks based on availability
         lex_task = asyncio.ensure_future(self._lexical_channel(req))
-        vec_task = asyncio.ensure_future(self._vector_channel(req))
+        vec_task = None
+        
+        if vector_disabled or qdrant_unavailable:
+            # Skip vector channel entirely
+            logger.info("Vector channel skipped due to feature flag or health check")
+        else:
+            vec_task = asyncio.ensure_future(self._vector_channel(req))
 
         outcome = await self._run_pipeline(req, lex_task, vec_task, deadline)
 
@@ -236,7 +270,7 @@ class SearchOrchestrator:
         self,
         req: SearchRequest,
         lex_task: asyncio.Task[list[LexicalHit]],
-        vec_task: asyncio.Task[list[VectorHit]],
+        vec_task: asyncio.Task[list[VectorHit]] | None,
         deadline: float,
     ) -> _ChannelOutcome:
         """Dispatch to the speculative, plain-rerank, or collect-only path."""
@@ -261,7 +295,7 @@ class SearchOrchestrator:
             logger.warning("Circuit breaker open, skipping rerank", extra={"state": self._breaker.state()})
             return outcome
 
-        if self._reranker_config.speculative_enabled and self._speculative is not None:
+        if self._reranker_config.speculative_enabled and self._speculative is not None and vec_task is not None:
             return await self._run_speculative(req, lex_task, vec_task, deadline)
 
         outcome = await self._collect_channels(lex_task, vec_task, deadline)
@@ -274,7 +308,7 @@ class SearchOrchestrator:
     async def _collect_channels(
         self,
         lex_task: asyncio.Task[list[LexicalHit]],
-        vec_task: asyncio.Task[list[VectorHit]],
+        vec_task: asyncio.Task[list[VectorHit]] | None,
         deadline: float,
     ) -> _ChannelOutcome:
         """Await both channels under the overall deadline, cancelling stragglers.
@@ -284,7 +318,9 @@ class SearchOrchestrator:
         channel never blocks a fast one past the deadline.
         """
         outcome = _ChannelOutcome()
-        pending: set[asyncio.Task[Any]] = {lex_task, vec_task}
+        pending: set[asyncio.Task[Any]] = {lex_task}
+        if vec_task is not None:
+            pending.add(vec_task)
 
         while pending and time.monotonic() < deadline:
             done, pending = await asyncio.wait(
@@ -298,6 +334,7 @@ class SearchOrchestrator:
         if pending:
             outcome.partial = True
             logger.warning("Search deadline exceeded, cancelling stragglers", extra={"pending": len(pending)})
+            metrics.search_partial_total.inc()
 
         for task in pending:
             task.cancel()

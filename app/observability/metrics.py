@@ -137,6 +137,20 @@ eval_regression_detected_total = Counter(
     "Total evaluation runs that detected regressions.",
 )
 
+# ---------------------------------------------------------------------------
+# Degraded mode metrics — updated by SearchOrchestrator (C-09)
+# ---------------------------------------------------------------------------
+search_degraded_total = Counter(
+    "search_degraded_total",
+    "Total degraded search requests.",
+    labelnames=["reason"],  # "qdrant_unavailable", "deadline_exceeded", "vector_disabled"
+)
+
+search_partial_total = Counter(
+    "search_partial_total",
+    "Total search requests that returned partial results.",
+)
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
@@ -155,19 +169,6 @@ __all__ = [
     "eval_mrr",
     "eval_runs_total",
     "eval_regression_detected_total",
-]
-
-__all__ = [
-    "dead_letter_count",
-    "dead_letters_total",
-    "embedding_cache_hits_total",
-    "embedding_cache_requests_total",
-    "index_lag_seconds",
-    "outbox_pending_count",
-    "qdrant_upsert_errors_total",
-    "reconciler_batch_size",
-    "search_latency_ms",
-    "circuit_breaker_state",
-    "circuit_breaker_opened_total",
-    "circuit_breaker_requests_total",
+    "search_degraded_total",
+    "search_partial_total",
 ]
