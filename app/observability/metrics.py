@@ -86,6 +86,25 @@ reconciler_batch_size = Gauge(
     "Batch size used by ReconcilerWorker (configurable, default 500).",
 )
 
+# ---------------------------------------------------------------------------
+# Circuit breaker metrics — updated by RerankerCircuitBreaker (C-03)
+# ---------------------------------------------------------------------------
+circuit_breaker_state = Gauge(
+    "circuit_breaker_state",
+    "Current circuit breaker state (0=closed, 1=half_open, 2=open).",
+)
+
+circuit_breaker_opened_total = Counter(
+    "circuit_breaker_opened_total",
+    "Total circuit breaker open transitions (closed → open).",
+)
+
+circuit_breaker_requests_total = Counter(
+    "circuit_breaker_requests_total",
+    "Circuit breaker call results",
+    labelnames=["result"],  # "success", "error", "rejected"
+)
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
@@ -96,4 +115,7 @@ __all__ = [
     "qdrant_upsert_errors_total",
     "reconciler_batch_size",
     "search_latency_ms",
+    "circuit_breaker_state",
+    "circuit_breaker_opened_total",
+    "circuit_breaker_requests_total",
 ]
