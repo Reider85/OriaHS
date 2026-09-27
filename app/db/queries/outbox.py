@@ -194,6 +194,20 @@ async def count_dead(session: AsyncSession) -> int:
     return int(result.scalar_one() or 0)
 
 
+async def get_status_by_document_id(session: AsyncSession, doc_id: UUID) -> str | None:
+    """Return the latest outbox status for a document, or None if not found."""
+    result = await session.execute(
+        text(
+            "SELECT status FROM search_outbox "
+            "WHERE document_id = :doc_id "
+            "ORDER BY updated_at DESC LIMIT 1"
+        ),
+        {"doc_id": doc_id},
+    )
+    row = result.scalar_one_or_none()
+    return str(row) if row else None
+
+
 __all__ = [
     "PendingOutboxRow",
     "add_upsert",
@@ -207,4 +221,5 @@ __all__ = [
     "mark_dead",
     "index_lag_seconds",
     "count_dead",
+    "get_status_by_document_id",
 ]

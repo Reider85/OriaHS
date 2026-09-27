@@ -43,6 +43,13 @@ class IndexResponse(BaseModel):
     wait_for_index_token: str | None = None
 
 
+class IndexStatusResponse(BaseModel):
+    """Response of ``GET /index/status/{token}`` (ARCHITECT §14.3)."""
+
+    token: str
+    status: Literal["pending", "done", "dead"]
+
+
 # ---------------------------------------------------------------------------
 # P-11: Search read-path models (ARCHITECT §14.1, MVP subset)
 # ---------------------------------------------------------------------------
