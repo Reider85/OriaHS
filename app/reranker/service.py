@@ -111,7 +111,7 @@ class RerankerService:
         if top_k is not None:
             results = results[:top_k]
 
-        # Log performance metrics
+        # Log performance metrics and record latency metric
         inference_ms = int((time.time() - start_time) * 1000) if 'start_time' in locals() else 0
         logger.info(
             "Rerank done",
@@ -122,6 +122,12 @@ class RerankerService:
                 "inference_ms": inference_ms,
             },
         )
+        
+        # Record latency metric (C-12)
+        metrics.reranker_latency_ms.labels(
+            device=self._device, 
+            mock=self._config.mock_mode
+        ).observe(inference_ms)
 
         return results
 

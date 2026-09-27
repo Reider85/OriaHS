@@ -60,7 +60,7 @@ class RerankerCircuitBreaker:
             When circuit breaker is open (early return without calling fn).
         """
         # Update metrics for current state
-        circuit_breaker_state.set(self._state_value())
+        circuit_breaker_state.labels(component="reranker").set(self._state_value())
         
         if self._state == "open":
             # Log warning and return sentinel
@@ -72,7 +72,7 @@ class RerankerCircuitBreaker:
                     "state": self._state,
                 },
             )
-            circuit_breaker_requests_total.labels(result="rejected").inc()
+            circuit_breaker_requests_total.labels(component="reranker", result="rejected").inc()
             raise CircuitBreakerOpen("Circuit breaker is open")
         
         try:
@@ -82,13 +82,13 @@ class RerankerCircuitBreaker:
             latency_ms = int((time.time() - start_time) * 1000)
             success = True
             
-            circuit_breaker_requests_total.labels(result="success").inc()
+            circuit_breaker_requests_total.labels(component="reranker", result="success").inc()
             
         except Exception as exc:
             latency_ms = 0  # unknown latency for failed calls
             success = False
             result = exc
-            circuit_breaker_requests_total.labels(result="error").inc()
+            circuit_breaker_requests_total.labels(component="reranker", result="error").inc()
         
         # Record the call result in rolling window
         await self._record_call(time.time() * 1000, latency_ms, success)
@@ -113,7 +113,7 @@ class RerankerCircuitBreaker:
                         "Circuit breaker reopened after failed probe",
                         extra={"cooldown_seconds": self._config.cooldown_seconds},
                     )
-                    circuit_breaker_opened_total.inc()
+                    circuit_breaker_opened_total.labels(component="reranker", reason="latency").inc()
         
         return result
     
@@ -163,7 +163,7 @@ class RerankerCircuitBreaker:
                             "cooldown_seconds": self._config.cooldown_seconds,
                         },
                     )
-                    circuit_breaker_opened_total.inc()
+                    circuit_breaker_opened_total.labels(component="reranker", reason="error_rate").inc()
             
             elif self._state == "open":
                 # Check if we should transition to half-open

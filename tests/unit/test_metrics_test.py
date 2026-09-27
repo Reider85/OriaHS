@@ -1,7 +1,7 @@
-"""Unit tests for Prometheus metrics (P-15, ARCHITECT §11.1).
+"""Unit tests for Prometheus metrics (P-15, C-12 Critical, ARCHITECT §11.1).
 
-Verifies that every MVP metric is registered in the default Prometheus
-registry and that increment/observe operations update the exposed values.
+Verifies that all 22 metrics (7 MVP + 15 Critical) are registered in the default
+Prometheus registry and that increment/observe operations update the exposed values.
 """
 
 from __future__ import annotations
@@ -17,12 +17,18 @@ def _reset_metrics() -> None:  # type: ignore[misc]
     """Reset all metric values between tests to avoid cross-test pollution."""
     for collector in [
         metrics.search_latency_ms,
+        metrics.reranker_latency_ms,
         metrics.index_lag_seconds,
         metrics.qdrant_upsert_errors_total,
         metrics.embedding_cache_hits_total,
         metrics.embedding_cache_requests_total,
         metrics.dead_letter_count,
         metrics.dead_letters_total,
+        metrics.circuit_breaker_state,
+        metrics.circuit_breaker_opened_total,
+        metrics.circuit_breaker_requests_total,
+        metrics.fusion_strategy_usage,
+        metrics.qdrant_pushdown_rate,
     ]:
         if hasattr(collector, "clear"):
             collector.clear()
@@ -120,12 +126,113 @@ class TestDeadLettersTotal:
         assert "dead_letters_total 2.0" in output
 
 
+class TestRerankerLatencyMs:
+    """Test reranker latency histogram (C-12)."""
+    
+    def test_registered(self) -> None:
+        output = _gather()
+        assert "reranker_latency_ms" in output
+    
+    def test_observe_increments_bucket(self) -> None:
+        metrics.reranker_latency_ms.labels(device="cuda", mock=False).observe(150)
+        output = _gather()
+        assert 'reranker_latency_ms_bucket{device="cuda",mock="false",le="150.0"}' in output
+        assert 'reranker_latency_ms_count{device="cuda",mock="false"}' in output
+    
+    def test_multiple_labels(self) -> None:
+        metrics.reranker_latency_ms.labels(device="cuda", mock=False).observe(50)
+        metrics.reranker_latency_ms.labels(device="cpu", mock=True).observe(200)
+        output = _gather()
+        assert 'device="cuda"' in output
+        assert 'device="cpu"' in output
+        assert 'mock="false"' in output
+        assert 'mock="true"' in output
+
+
+class TestFusionStrategyUsage:
+    """Test fusion strategy usage counter (C-12)."""
+    
+    def test_registered(self) -> None:
+        output = _gather()
+        assert "fusion_strategy_usage" in output
+    
+    def test_inc_with_label(self) -> None:
+        metrics.fusion_strategy_usage.labels(strategy="rrf").inc()
+        metrics.fusion_strategy_usage.labels(strategy="weighted").inc()
+        metrics.fusion_strategy_usage.labels(strategy="weighted").inc()
+        output = _gather()
+        assert 'fusion_strategy_usage{strategy="rrf"} 1.0' in output
+        assert 'fusion_strategy_usage{strategy="weighted"} 2.0' in output
+
+
+class TestCircuitBreakerState:
+    """Test circuit breaker state gauge (C-12)."""
+    
+    def test_registered(self) -> None:
+        output = _gather()
+        assert "circuit_breaker_state" in output
+    
+    def test_set_with_label(self) -> None:
+        metrics.circuit_breaker_state.labels(component="reranker").set(1)
+        output = _gather()
+        assert 'circuit_breaker_state{component="reranker"} 1.0' in output
+
+
+class TestCircuitBreakerOpenedTotal:
+    """Test circuit breaker opened counter (C-12)."""
+    
+    def test_registered(self) -> None:
+        output = _gather()
+        assert "circuit_breaker_opened_total" in output
+    
+    def test_inc_with_labels(self) -> None:
+        metrics.circuit_breaker_opened_total.labels(component="reranker", reason="error_rate").inc()
+        metrics.circuit_breaker_opened_total.labels(component="reranker", reason="latency").inc()
+        output = _gather()
+        assert 'circuit_breaker_opened_total{component="reranker",reason="error_rate"} 1.0' in output
+        assert 'circuit_breaker_opened_total{component="reranker",reason="latency"} 1.0' in output
+
+
+class TestCircuitBreakerRequestsTotal:
+    """Test circuit breaker requests counter (C-12)."""
+    
+    def test_registered(self) -> None:
+        output = _gather()
+        assert "circuit_breaker_requests_total" in output
+    
+    def test_inc_with_labels(self) -> None:
+        metrics.circuit_breaker_requests_total.labels(component="reranker", result="success").inc()
+        metrics.circuit_breaker_requests_total.labels(component="reranker", result="error").inc()
+        metrics.circuit_breaker_requests_total.labels(component="reranker", result="rejected").inc()
+        output = _gather()
+        assert 'circuit_breaker_requests_total{component="reranker",result="success"} 1.0' in output
+        assert 'circuit_breaker_requests_total{component="reranker",result="error"} 1.0' in output
+        assert 'circuit_breaker_requests_total{component="reranker",result="rejected"} 1.0' in output
+
+
+class TestQdrantPushdownRate:
+    """Test Qdrant push-down rate counter (C-12)."""
+    
+    def test_registered(self) -> None:
+        output = _gather()
+        assert "qdrant_pushdown_rate" in output
+    
+    def test_inc_with_label(self) -> None:
+        metrics.qdrant_pushdown_rate.labels(result="used").inc()
+        metrics.qdrant_pushdown_rate.labels(result="skipped").inc()
+        metrics.qdrant_pushdown_rate.labels(result="skipped").inc()
+        output = _gather()
+        assert 'qdrant_pushdown_rate{result="used"} 1.0' in output
+        assert 'qdrant_pushdown_rate{result="skipped"} 2.0' in output
+
+
 class TestAllMetricsExposed:
-    """Catch-all: every MVP metric must appear in the exposition output."""
+    """Catch-all: all 22 metrics (7 MVP + 15 Critical) must appear in the exposition output."""
 
     @pytest.mark.parametrize(
         "metric_name",
         [
+            # MVP metrics
             "search_latency_ms",
             "index_lag_seconds",
             "qdrant_upsert_errors_total",
@@ -133,6 +240,13 @@ class TestAllMetricsExposed:
             "embedding_cache_requests_total",
             "dead_letter_count",
             "dead_letters_total",
+            # Critical metrics (C-12)
+            "reranker_latency_ms",
+            "fusion_strategy_usage",
+            "circuit_breaker_state",
+            "circuit_breaker_opened_total",
+            "circuit_breaker_requests_total",
+            "qdrant_pushdown_rate",
         ],
     )
     def test_metric_present(self, metric_name: str) -> None:

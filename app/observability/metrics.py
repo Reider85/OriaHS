@@ -24,6 +24,26 @@ search_latency_ms = Histogram(
 )
 
 # ---------------------------------------------------------------------------
+# Reranker latency — filled by RerankerService after every rerank (C-12)
+# Buckets in milliseconds (C-12: p99 ≤ 350 ms for 50 pairs on GPU)
+# ---------------------------------------------------------------------------
+reranker_latency_ms = Histogram(
+    "reranker_latency_ms",
+    "Cross-encoder reranking latency in milliseconds (per query).",
+    labelnames=["device", "mock"],
+    buckets=[10, 25, 50, 100, 200, 300, 500, 1000],
+)
+
+# ---------------------------------------------------------------------------
+# Fusion strategy usage — filled by SearchOrchestrator after every search (C-12)
+# ---------------------------------------------------------------------------
+fusion_strategy_usage = Counter(
+    "fusion_strategy_usage",
+    "Total search requests by fusion strategy.",
+    labelnames=["strategy"],  # "rrf", "weighted", "rerank", "weighted+rerank"
+)
+
+# ---------------------------------------------------------------------------
 # Indexing lag — filled by ReconcilerWorker every poll cycle
 # ---------------------------------------------------------------------------
 index_lag_seconds = Gauge(
@@ -92,17 +112,19 @@ reconciler_batch_size = Gauge(
 circuit_breaker_state = Gauge(
     "circuit_breaker_state",
     "Current circuit breaker state (0=closed, 1=half_open, 2=open).",
+    labelnames=["component"],  # "reranker"
 )
 
 circuit_breaker_opened_total = Counter(
     "circuit_breaker_opened_total",
     "Total circuit breaker open transitions (closed → open).",
+    labelnames=["component", "reason"],  # "reranker", "error_rate", "latency"
 )
 
 circuit_breaker_requests_total = Counter(
     "circuit_breaker_requests_total",
     "Circuit breaker call results",
-    labelnames=["result"],  # "success", "error", "rejected"
+    labelnames=["component", "result"],  # "reranker", "success", "error", "rejected"
 )
 
 # ---------------------------------------------------------------------------
@@ -154,11 +176,14 @@ search_partial_total = Counter(
 # ---------------------------------------------------------------------------
 # Push-down filter metrics — updated by SearchOrchestrator (C-10)
 # ---------------------------------------------------------------------------
-pushdown_total = Counter(
-    "pushdown_total",
+qdrant_pushdown_rate = Counter(
+    "qdrant_pushdown_rate",
     "Push-down filter usage decisions.",
     labelnames=["result"],  # "used", "skipped", "too_large", "no_filters", "disabled", "not_selective"
 )
+
+# Legacy alias for backward compatibility
+pushdown_total = qdrant_pushdown_rate
 
 pushdown_selectivity = Gauge(
     "pushdown_selectivity",
@@ -188,6 +213,8 @@ __all__ = [
     "qdrant_upsert_errors_total",
     "reconciler_batch_size",
     "search_latency_ms",
+    "reranker_latency_ms",
+    "fusion_strategy_usage",
     "circuit_breaker_state",
     "circuit_breaker_opened_total",
     "circuit_breaker_requests_total",
@@ -198,7 +225,7 @@ __all__ = [
     "eval_regression_detected_total",
     "search_degraded_total",
     "search_partial_total",
-    "pushdown_total",
+    "qdrant_pushdown_rate",
     "pushdown_selectivity",
     "outbox_throttled_total",
     "outbox_reindex_triggered_total",

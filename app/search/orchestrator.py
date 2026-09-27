@@ -267,7 +267,7 @@ class SearchOrchestrator:
             metrics.pushdown_selectivity.set(
                 decision.selectivity if decision.selectivity is not None else 1.0,
             )
-            metrics.pushdown_total.labels(result=decision.reason).inc()
+            metrics.qdrant_pushdown_rate.labels(result=decision.reason).inc()
 
             if decision.use_pushdown:
                 pushdown_ids = decision.doc_ids
@@ -581,9 +581,16 @@ class SearchOrchestrator:
     ) -> list[tuple[UUID, float]]:
         """Dispatch to the requested fusion strategy (ARCHITECT §7.1, §7.2)."""
         if req.fusion == "weighted" and self._flags.weighted_fusion_enabled:
+            # Track weighted fusion usage
+            metrics.fusion_strategy_usage.labels(strategy="weighted").inc()
             return weighted_fuse(lex_hits, vec_hits, alpha=req.fusion_alpha)
         if req.fusion == "weighted":
+            # Track weighted fusion fallback to RRF
+            metrics.fusion_strategy_usage.labels(strategy="rrf").inc()
             logger.warning("weighted_fusion_enabled=False, falling back to RRF")
+        else:
+            # Track RRF usage
+            metrics.fusion_strategy_usage.labels(strategy="rrf").inc()
         return rrf_fuse(lex_hits, vec_hits, k=self._config.rrf_k)
 
     def _apply_rerank(
