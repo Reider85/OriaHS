@@ -105,6 +105,58 @@ circuit_breaker_requests_total = Counter(
     labelnames=["result"],  # "success", "error", "rejected"
 )
 
+# ---------------------------------------------------------------------------
+# Evaluation metrics — updated by NightlyEvalJob (C-07)
+# ---------------------------------------------------------------------------
+eval_recall_at_10 = Gauge(
+    "eval_recall_at_10",
+    "Recall@10 score for evaluation strategies.",
+    labelnames=["strategy", "dataset_version"],
+)
+
+eval_ndcg_at_10 = Gauge(
+    "eval_ndcg_at_10",
+    "nDCG@10 score for evaluation strategies.",
+    labelnames=["strategy", "dataset_version"],
+)
+
+eval_mrr = Gauge(
+    "eval_mrr",
+    "Mean Reciprocal Rank for evaluation strategies.",
+    labelnames=["strategy", "dataset_version"],
+)
+
+eval_runs_total = Counter(
+    "eval_runs_total",
+    "Total evaluation runs completed.",
+    labelnames=["strategy"],
+)
+
+eval_regression_detected_total = Counter(
+    "eval_regression_detected_total",
+    "Total evaluation runs that detected regressions.",
+)
+
+__all__ = [
+    "dead_letter_count",
+    "dead_letters_total",
+    "embedding_cache_hits_total",
+    "embedding_cache_requests_total",
+    "index_lag_seconds",
+    "outbox_pending_count",
+    "qdrant_upsert_errors_total",
+    "reconciler_batch_size",
+    "search_latency_ms",
+    "circuit_breaker_state",
+    "circuit_breaker_opened_total",
+    "circuit_breaker_requests_total",
+    "eval_recall_at_10",
+    "eval_ndcg_at_10",
+    "eval_mrr",
+    "eval_runs_total",
+    "eval_regression_detected_total",
+]
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
