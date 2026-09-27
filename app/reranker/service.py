@@ -12,7 +12,7 @@ from typing import Optional
 
 import numpy as np
 import torch
-from flagembedding import FlagReranker
+from FlagEmbedding import FlagReranker
 from pydantic import ConfigDict
 
 from app.config import RerankerConfig

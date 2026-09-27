@@ -8,7 +8,7 @@ uv run uvicorn app.main:app --reload --port 8000   # dev server
 
 uv run ruff check app/ tests/   # lint
 uv run ruff format app/ tests/  # format
-uv run mypy app/                # typecheck (strict)
+uv run mypy app/                # typecheck (strict, pydantic plugin)
 uv run pytest                   # all tests
 uv run pytest tests/unit/       # unit only (no infra needed)
 uv run pytest -m "not slow"     # skip slow/docker tests
@@ -21,6 +21,7 @@ Order matters: **lint → typecheck → test**.
 ```bash
 cp .env.example .env
 docker compose up -d   # PostgreSQL 16 (pgvector), Qdrant 1.12, Redis 7, Grafana
+uv run alembic upgrade head   # apply SQL migrations after PG is up
 ```
 
 PostgreSQL extension note: use `CREATE EXTENSION IF NOT EXISTS vector;` (not `pgvector`).
@@ -31,9 +32,11 @@ Dual-channel hybrid search: lexical (PostgreSQL pg_trgm/tsvector) + vector (Qdra
 
 Key entry points:
 - `app/main.py` → FastAPI app factory `create_app()`
-- `app/config.py` → all config via pydantic-settings (env > `.env`), 13 nested `BaseSettings` classes
+- `app/config.py` → all config via pydantic-settings (env > `.env`), ~13 nested `BaseSettings` classes
 - `app/reconciler/worker.py` → outbox poller, embeds + upserts to Qdrant
 - `app/search/` → search orchestrator, lexical/vector channels, RRF fusion, speculative rerank
+- `app/embedding/service.py` → bge-m3 embedding service (FlagEmbedding)
+- `app/reranker/service.py` → cross-encoder reranker with circuit breaker
 
 ## Conventions
 
@@ -60,3 +63,4 @@ Key entry points:
 - License mismatch: `LICENSE` file says Apache 2.0, `pyproject.toml` says MIT.
 - `qdrant_collections.yaml` defines collection config declaratively — run `scripts/init_qdrant.py` to apply.
 - Feature flags (`vector_search_enabled`, `rerank_enabled`, etc.) can disable components at runtime without redeploy.
+- No CI workflows exist yet (`.github/workflows/` is empty).

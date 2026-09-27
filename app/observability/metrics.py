@@ -151,6 +151,20 @@ search_partial_total = Counter(
     "Total search requests that returned partial results.",
 )
 
+# ---------------------------------------------------------------------------
+# Push-down filter metrics — updated by SearchOrchestrator (C-10)
+# ---------------------------------------------------------------------------
+pushdown_total = Counter(
+    "pushdown_total",
+    "Push-down filter usage decisions.",
+    labelnames=["result"],  # "used", "skipped", "too_large", "no_filters", "disabled", "not_selective"
+)
+
+pushdown_selectivity = Gauge(
+    "pushdown_selectivity",
+    "Last selectivity estimate for push-down filter decision.",
+)
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
@@ -171,4 +185,6 @@ __all__ = [
     "eval_regression_detected_total",
     "search_degraded_total",
     "search_partial_total",
+    "pushdown_total",
+    "pushdown_selectivity",
 ]

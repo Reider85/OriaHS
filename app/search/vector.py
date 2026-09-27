@@ -136,15 +136,26 @@ async def vector_search(
     filters: SearchFilters,
     model_name: str | None = None,
     k: int = 50,
+    pushdown_ids: list[UUID] | None = None,
 ) -> list[VectorHit]:
     """Run the vector channel: query embed → Qdrant kNN + payload filter.
+
+    When *pushdown_ids* is provided (C-10, ARCHITECT §8.2), a ``MatchAny``
+    condition on ``doc_id`` is added to the Qdrant filter, restricting the
+    HNSW traversal to the pre-filtered candidate set from Postgres.
+
+    An empty *pushdown_ids* list means the Postgres pre-filter returned no
+    candidates, so the vector channel short-circuits immediately.
 
     Raises:
         QdrantTimeoutError: Qdrant did not answer within 100 ms.
         QdrantUnavailableError: Qdrant is unreachable / returned an error.
-        
+
     Implements timeout retry with exponential backoff (C-09).
     """
+    if pushdown_ids is not None and len(pushdown_ids) == 0:
+        return []
+
     model_name = model_name or DEFAULT_MODEL_NAME
 
     vec = await embedding_cache.get_query_embedding(query, model_name)
@@ -154,10 +165,18 @@ async def vector_search(
 
     qfilter = build_qdrant_filter(tenant_id, filters, model_name)
 
+    if pushdown_ids:
+        qfilter.must.append(
+            qmodels.FieldCondition(
+                key="doc_id",
+                match=qmodels.MatchAny(any=[str(d) for d in pushdown_ids]),
+            )
+        )
+
     # Timeout retry logic (max 1 retry for Qdrant)
     max_retries = 1
     last_error = None
-    
+
     for attempt in range(max_retries + 1):
         try:
             scored = await asyncio.wait_for(
@@ -171,7 +190,7 @@ async def vector_search(
                 timeout=SEARCH_TIMEOUT_SECONDS,
             )
             break  # Success, exit retry loop
-        except TimeoutError as exc:
+        except TimeoutError:
             last_error = QdrantTimeoutError(
                 f"Qdrant search exceeded {SEARCH_TIMEOUT_SECONDS * 1000:.0f} ms (retry {attempt + 1}/{max_retries + 1})"
             )
@@ -180,7 +199,7 @@ async def vector_search(
                 delay = SEARCH_TIMEOUT_SECONDS * (2 ** attempt)
                 await asyncio.sleep(delay)
                 continue
-            raise last_error
+            raise last_error from None
         except qdrant_exceptions.ApiException as exc:
             status = getattr(exc, "status_code", None)
             raise QdrantUnavailableError(

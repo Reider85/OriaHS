@@ -50,6 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import SearchHit, SearchRequest, SearchResponse
 from app.config import FeatureFlags, RerankerConfig, SearchConfig
+from app.db.redis_client import get_redis_client
 from app.embedding.cache import EmbeddingCache
 from app.embedding.service import EmbeddingService
 from app.observability import metrics
@@ -57,13 +58,18 @@ from app.reranker.circuit_breaker import CircuitBreakerOpen, RerankerCircuitBrea
 from app.reranker.exceptions import RerankerTimeoutException, RerankerUnavailableException
 from app.reranker.schemas import RerankCandidate, RerankResult
 from app.reranker.service import RerankerService
-from app.search.exceptions import DeadlockError, QdrantTimeoutError, QdrantUnavailableError, StatementTimeoutError
-from app.search.fusion import rrf_fuse, weighted_fuse
+from app.search.exceptions import (
+    DeadlockError,
+    QdrantTimeoutError,
+    QdrantUnavailableError,
+    StatementTimeoutError,
+)
 from app.search.facets import compute_facets
+from app.search.fusion import rrf_fuse, weighted_fuse
 from app.search.lexical import LexicalHit, lexical_search
+from app.search.pushdown import maybe_pushdown
 from app.search.speculative import SpeculativeReranker
 from app.search.vector import VectorHit, vector_search
-from app.observability import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +169,7 @@ class SearchOrchestrator:
             logger.warning("Vector search disabled via feature flag, using lexical only")
             vector_disabled = True
             metrics.search_degraded_total.labels(reason="vector_disabled").inc()
-        
+
         # Check Qdrant health if enabled
         qdrant_unavailable = False
         if self._qdrant_health_check and self._flags.vector_search_enabled:
@@ -184,7 +190,7 @@ class SearchOrchestrator:
         # Create tasks based on availability
         lex_task = asyncio.ensure_future(self._lexical_channel(req))
         vec_task = None
-        
+
         if vector_disabled or qdrant_unavailable:
             # Skip vector channel entirely
             logger.info("Vector channel skipped due to feature flag or health check")
@@ -251,6 +257,28 @@ class SearchOrchestrator:
         )
 
     async def _vector_channel(self, req: SearchRequest) -> list[VectorHit]:
+        pushdown_ids: list[UUID] | None = None
+
+        if self._flags.pushdown_enabled:
+            redis = get_redis_client()
+            decision = await maybe_pushdown(
+                self._session, redis, req.tenant_id, req.filters,
+            )
+            metrics.pushdown_selectivity.set(
+                decision.selectivity if decision.selectivity is not None else 1.0,
+            )
+            metrics.pushdown_total.labels(result=decision.reason).inc()
+
+            if decision.use_pushdown:
+                pushdown_ids = decision.doc_ids
+                logger.debug(
+                    "Push-down applied",
+                    extra={
+                        "doc_id_count": len(decision.doc_ids),
+                        "selectivity": decision.selectivity,
+                    },
+                )
+
         return await vector_search(
             self._session,
             self._qdrant,
@@ -260,6 +288,7 @@ class SearchOrchestrator:
             req.tenant_id,
             req.filters,
             k=self._config.k_vector,
+            pushdown_ids=pushdown_ids,
         )
 
     # ------------------------------------------------------------------
