@@ -1,0 +1,167 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Critical — Push-down",
+    "tags": ["critical", "pushdown"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Push-down Usage Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(qdrant_pushdown_rate{result=\"used\"}[5m]) / rate(qdrant_pushdown_rate[5m]) * 100",
+            "legendFormat": "Usage rate (%)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 20
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            },
+            "unit": "percentunit"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Selectivity Gauge",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "pushdown_selectivity",
+            "legendFormat": "Last selectivity estimate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "red",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.1
+                },
+                {
+                  "color": "green",
+                  "value": 0.5
+                }
+              ]
+            },
+            "unit": "none"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Push-down Results Breakdown",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(qdrant_pushdown_rate{result=\"used\"}[5m])",
+            "legendFormat": "Used"
+          },
+          {
+            "expr": "rate(qdrant_pushdown_rate{result=\"skipped\"}[5m])",
+            "legendFormat": "Skipped"
+          },
+          {
+            "expr": "rate(qdrant_pushdown_rate{result=\"too_large\"}[5m])",
+            "legendFormat": "Too large"
+          },
+          {
+            "expr": "rate(qdrant_pushdown_rate{result=\"no_filters\"}[5m])",
+            "legendFormat": "No filters"
+          },
+          {
+            "expr": "rate(qdrant_pushdown_rate{result=\"disabled\"}[5m])",
+            "legendFormat": "Disabled"
+          },
+          {
+            "expr": "rate(qdrant_pushdown_rate{result=\"not_selective\"}[5m])",
+            "legendFormat": "Not selective"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 10
+                },
+                {
+                  "color": "red",
+                  "value": 100
+                }
+              ]
+            },
+            "unit": "1/s"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Too-Large Rejections",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(qdrant_pushdown_rate{result=\"too_large\"}[5m])",
+            "legendFormat": "Rejections due to size"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 1
+                },
+                {
+                  "color": "red",
+                  "value": 10
+                }
+              ]
+            },
+            "unit": "1/s"
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s"
+  }
+}

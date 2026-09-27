@@ -1,0 +1,175 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Critical — Eval Regression",
+    "tags": ["critical", "eval"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Recall@10 by Strategy",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "eval_recall_at_10{strategy=\"rrf\"}",
+            "legendFormat": "RRF"
+          },
+          {
+            "expr": "eval_recall_at_10{strategy=\"weighted\"}",
+            "legendFormat": "Weighted"
+          },
+          {
+            "expr": "eval_recall_at_10{strategy=\"weighted+rerank\"}",
+            "legendFormat": "Weighted + Rerank"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.3
+                },
+                {
+                  "color": "red",
+                  "value": 0.5
+                }
+              ]
+            },
+            "unit": "none"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "nDCG@10 by Strategy",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "eval_ndcg_at_10{strategy=\"rrf\"}",
+            "legendFormat": "RRF"
+          },
+          {
+            "expr": "eval_ndcg_at_10{strategy=\"weighted\"}",
+            "legendFormat": "Weighted"
+          },
+          {
+            "expr": "eval_ndcg_at_10{strategy=\"weighted+rerank\"}",
+            "legendFormat": "Weighted + Rerank"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.3
+                },
+                {
+                  "color": "red",
+                  "value": 0.5
+                }
+              ]
+            },
+            "unit": "none"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "MRR by Strategy",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "eval_mrr{strategy=\"rrf\"}",
+            "legendFormat": "RRF"
+          },
+          {
+            "expr": "eval_mrr{strategy=\"weighted\"}",
+            "legendFormat": "Weighted"
+          },
+          {
+            "expr": "eval_mrr{strategy=\"weighted+rerank\"}",
+            "legendFormat": "Weighted + Rerank"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.3
+                },
+                {
+                  "color": "red",
+                  "value": 0.5
+                }
+              ]
+            },
+            "unit": "none"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Eval Runs & Regressions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "eval_runs_total",
+            "legendFormat": "Total eval runs"
+          },
+          {
+            "expr": "eval_regression_detected_total",
+            "legendFormat": "Regressions detected"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 1
+                },
+                {
+                  "color": "red",
+                  "value": 10
+                }
+              ]
+            },
+            "unit": "none"
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s"
+  }
+}
