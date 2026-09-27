@@ -119,6 +119,7 @@ class RerankerConfig(BaseSettings):
     timeout_ms: int = Field(default=500, ge=1)
     speculative_top_n: int = Field(default=10, ge=1)
     speculative_enabled: bool = True
+    warmup: bool = False
 
 
 class CircuitBreakerConfig(BaseSettings):

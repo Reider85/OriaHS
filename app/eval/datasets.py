@@ -89,16 +89,16 @@ def get_query_stats(queries: list[EvalQuery]) -> dict[str, Any]:
     """
     total_queries = len(queries)
     total_relevant = sum(len(q.relevant_doc_ids) for q in queries)
-        avg_relevant_per_query = total_relevant / total_queries if total_queries > 0 else 0
-        languages = {q.language for q in queries}
-        
-        return {
-            "total_queries": total_queries,
-            "total_relevant_documents": total_relevant,
-            "avg_relevant_per_query": avg_relevant_per_query,
-            "languages": sorted(languages),
-            "unique_tenant_ids": sorted({q.tenant_id for q in queries}),
-        }
+    avg_relevant_per_query = total_relevant / total_queries if total_queries > 0 else 0
+    languages = {q.language for q in queries}
+    
+    return {
+        "total_queries": total_queries,
+        "total_relevant_documents": total_relevant,
+        "avg_relevant_per_query": avg_relevant_per_query,
+        "languages": sorted(languages),
+        "unique_tenant_ids": sorted({q.tenant_id for q in queries}),
+    }
 
 
 __all__ = ["EvalQuery", "load_dataset", "validate_dataset", "get_query_stats"]

@@ -266,7 +266,7 @@ class CriticalNFRTester:
         response = await self.client.post("/search", json=data)
         hits = response.json().get("hits", [])
         
-        relevant_found = sum(1 for hit in hits if hit.get("external_ref") in relevant_refs)
+        relevant_found = sum(1 for hit in hits if str(hit.get("doc_id")) in relevant_refs)
         return relevant_found / len(relevant_refs) if relevant_refs else 0
     
     async def _test_ndcg(self, fusion: str, rerank: bool, relevant_docs: List[tuple]) -> float:

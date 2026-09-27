@@ -46,7 +46,7 @@ async def test_critical_dod_1_ndcg_improvement(wired_app, sample_critical_index_
     
     # Seed documents with known relevant pairs
     tenant_id = str(uuid4())
-    documents = sample_critical_index_data(count=50, tenant_id=uuid4())
+    documents = sample_critical_index_data(count=50, tenant_id=uuid4)
     
     # Index documents
     index_responses = await e2e_client.index_batch(documents)
@@ -160,43 +160,66 @@ async def test_critical_dod_2_circuit_breaker_auto_disable(wired_app):
     engine, client = wired_app
     e2e_client = E2ETestClientCritical(client)
     
-    # Get the reranker service and inject errors
-    # Note: This is a simplified test - in production we'd use proper dependency injection
+    # Use monkeypatch to inject errors into the reranker service
     from app.reranker.service import RerankerService
-    from app.config import settings
+    from app.reranker.exceptions import RerankerUnavailableException
     
-    # Create a mock reranker with error injection
+    # Track calls to detect when circuit breaker opens
+    call_count = 0
+    error_count = 0
+    
+    async def mock_rerank_with_errors(self, query: str, docs, top_k: int | None = None):
+        nonlocal call_count, error_count
+        call_count += 1
+        
+        # Inject 6% errors (every 17th call)
+        if call_count % 17 == 0:  # ~6% error rate (1/17 ≈ 5.88%)
+            error_count += 1
+            raise RerankerUnavailableException("Mock error for circuit breaker test")
+        
+        # Call original method
+        return await self._original_rerank(query, docs, top_k)
+    
+    # Patch the rerank method
     mock_reranker = RerankerService(config=settings.reranker)
-    mock_reranker = inject_reranker_errors(mock_reranker, error_rate=0.06)  # 6% error rate
+    mock_reranker._original_rerank = mock_reranker.rerank
+    mock_reranker.rerank = mock_rerank_with_errors.__get__(mock_reranker, RerankerService)
     
-    # Send 100 search requests with rerank enabled
-    search_requests = []
-    for i in range(100):
-        search_request = {
-            "query": f"circuit breaker test query {i}",
-            "tenant_id": str(uuid4()),
-            "top_k": 10,
-            "rerank": True,
-            "timeout_ms": 2000
-        }
-        search_requests.append(search_request)
-    
-    # Execute requests and track circuit breaker state
-    circuit_breaker_opened = False
-    responses = []
-    
-    for i, search_request in enumerate(search_requests):
-        try:
-            response = await e2e_client.search_documents(search_request)
-            responses.append(response)
-            
-            # Check if circuit breaker is open via metrics
-            metrics_response = await e2e_client.get_metrics()
-            if "circuit_breaker_state{component=\"reranker\",state=\"open\"}" in metrics_response:
-                circuit_breaker_opened = True
-                break
+    with pytest.monkeypatch.context() as m:
+        # Replace the reranker service in the container
+        m.setattr("app.api.deps.get_reranker_service", lambda: mock_reranker)
+        
+        # Send 100 search requests with rerank enabled with small delays
+        search_requests = []
+        for i in range(100):
+            search_request = {
+                "query": f"circuit breaker test query {i}",
+                "tenant_id": str(uuid4()),
+                "top_k": 10,
+                "rerank": True,
+                "timeout_ms": 2000
+            }
+            search_requests.append(search_request)
+        
+        # Execute requests and track circuit breaker state
+        circuit_breaker_opened = False
+        responses = []
+        
+        for i, search_request in enumerate(search_requests):
+            try:
+                response = await e2e_client.search_documents(search_request)
+                responses.append(response)
                 
-        except Exception as e:
+                # Check if circuit breaker is open via metrics
+                metrics_response = await e2e_client.get_metrics()
+                if "circuit_breaker_state{component=\"reranker\",state=\"open\"}" in metrics_response:
+                    circuit_breaker_opened = True
+                    break
+                    
+                # Small delay to allow rolling window to accumulate
+                await asyncio.sleep(0.01)
+                
+            except Exception as e:
             print(f"Request {i} failed: {e}")
             # Continue with next request
     
@@ -558,7 +581,7 @@ async def test_critical_dod_5_wait_for_index_polling(wired_app):
 
 
 @pytest.mark.slow
-@pytest.mark.skip(reason="Large dataset test - requires significant memory and time")
+@pytest.mark.skip(reason="DoD #6 requires 100k documents - not feasible in CI environment. Run manually with large dataset.")
 async def test_critical_dod_6_pushdown_latency(wired_app):
     """DoD #6: Push-down filters work: on selective filter latency <= 50ms vs 200ms without push-down.
     
