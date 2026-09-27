@@ -168,6 +168,22 @@ async def count_pending(session: AsyncSession) -> int:
     return int(result.scalar_one() or 0)
 
 
+async def count_all_pending(session: AsyncSession) -> int:
+    """Count pending/failed/in_progress rows due within next minute (C-11).
+    
+    Matches the prompt SQL: includes 'in_progress' status and filters by 
+    next_retry_at <= now() + 1 minute. Used for adaptive throttle decisions.
+    """
+    result = await session.execute(
+        text(
+            "SELECT count(*) FROM search_outbox "
+            "WHERE status IN ('pending', 'failed', 'in_progress') "
+            "AND next_retry_at <= now() + interval '1 minute'"
+        )
+    )
+    return int(await result.scalar_one() or 0)
+
+
 async def index_lag_seconds(session: AsyncSession) -> float:
     """Age of the oldest pending/failed row (0 when the outbox is empty).
 
@@ -215,6 +231,7 @@ __all__ = [
     "has_pending",
     "claim_pending",
     "count_pending",
+    "count_all_pending",
     "mark_in_progress_many",
     "mark_done",
     "mark_failed",

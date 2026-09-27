@@ -29,18 +29,19 @@ class IndexRequest(BaseModel):
 
 
 class IndexResponse(BaseModel):
-    """Response of ``POST /index`` (ARCHITECT §14.2, MVP subset).
+    """Response of ``POST /index`` (ARCHITECT §14.2, Critical subset).
 
     ``status`` is ``"queued"`` when a new outbox task was created and
     ``"no_change"`` when the fast-path re-index of identical content was
-    skipped. ``"indexed"/"throttled"`` ship in the Critical phase.
+    skipped. ``"throttled"`` when adaptive throttle is active (C-11).
     ``wait_for_index_token`` is used for polling index status in Critical.
     """
 
     doc_id: UUID
-    status: Literal["queued", "no_change"]
+    status: Literal["queued", "no_change", "throttled"]
     indexed_at: datetime
     wait_for_index_token: str | None = None
+    throttled: bool = False
 
 
 class IndexStatusResponse(BaseModel):

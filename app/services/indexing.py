@@ -8,6 +8,7 @@ P-08 adds the idempotent ``soft_delete`` path with ``op='delete'``.
 """
 
 import hashlib
+from typing import Optional
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -16,10 +17,12 @@ from langdetect import DetectorFactory, detect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import IndexRequest, IndexResponse
+from app.config import ThrottleConfig
 from app.db.models import Document
 from app.db.queries import documents, outbox
 from app.db.queries.embedding_models import get_default_model
 from app.observability.logging import get_logger, tenant_id_ctx
+from app.services.throttle import OutboxThrottle
 
 logger = get_logger(__name__)
 
@@ -34,8 +37,13 @@ _EMBEDDING_REV = 1
 class IndexingService:
     """Owns the ``POST /index`` transaction + Redis Streams hand-off."""
 
-    def __init__(self, redis_client: aioredis.Redis | None = None) -> None:
+    def __init__(
+        self, 
+        redis_client: aioredis.Redis | None = None,
+        throttle: OutboxThrottle | None = None
+    ) -> None:
         self._redis = redis_client
+        self._throttle = throttle
 
     @staticmethod
     def content_hash(title: str, content: str) -> str:
@@ -113,12 +121,26 @@ class IndexingService:
             await outbox.add_upsert(session, doc_id, content_hash)
             await session.commit()
 
+            # Check throttle status (C-11)
+            throttled = False
+            status_str = "queued"
+            
+            if self._throttle is not None:
+                if await self._throttle.should_throttle():
+                    throttled = True
+                    status_str = "throttled"
+                    # Check if reindex should be triggered
+                    await self._throttle.check_and_log_reindex_trigger()
+                else:
+                    status_str = "queued"
+
             await self._enqueue("upsert", doc_id)
             return IndexResponse(
                 doc_id=doc_id,
-                status="queued",
+                status=status_str,
                 indexed_at=created_at,
                 wait_for_index_token=str(doc_id),
+                throttled=throttled,
             )
         finally:
             tenant_id_ctx.reset(token)

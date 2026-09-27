@@ -18,26 +18,56 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import IndexRequest, IndexResponse, IndexStatusResponse
+from app.config import ThrottleConfig
 from app.db.queries import outbox
 from app.db.redis_client import get_redis_client
 from app.db.session import get_session
 from app.services.indexing import IndexingService
+from app.services.throttle import OutboxThrottle
+
+
+def get_throttle_service() -> OutboxThrottle:
+    """Factory dependency for OutboxThrottle (C-11)."""
+    from app.config import settings
+    from app.db.session import get_session
+    from app.db.redis_client import get_redis_client
+    
+    session_factory = get_session()
+    redis_client = get_redis_client()
+    config = settings.throttle
+    
+    return OutboxThrottle(
+        session_factory=session_factory,
+        redis_client=redis_client,
+        config=config,
+    )
+
 
 router = APIRouter(prefix="/index", tags=["index"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 RedisDep = Annotated[aioredis.Redis, Depends(get_redis_client)]
+ThrottleDep = Annotated[OutboxThrottle, Depends(get_throttle_service)]
 
 
-@router.post("", response_model=IndexResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=IndexResponse)
 async def index_document(
     req: IndexRequest,
     session: SessionDep,
     redis_client: RedisDep,
-) -> IndexResponse:
-    """Index a document: dual-write to ``documents`` + ``search_outbox``."""
-    service = IndexingService(redis_client=redis_client)
-    return await service.create(session, req)
+    throttle: ThrottleDep,
+) -> Response:
+    """Index a document: dual-write to ``documents`` + ``search_outbox`` with adaptive throttle."""
+    service = IndexingService(redis_client=redis_client, throttle=throttle)
+    response = await service.create(session, req)
+    
+    # Return 202 Accepted if throttled, 201 Created otherwise
+    status_code = (
+        status.HTTP_202_ACCEPTED 
+        if response.throttled 
+        else status.HTTP_201_CREATED
+    )
+    return Response(content=response.model_dump_json(), status_code=status_code)
 
 
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -85,3 +115,6 @@ async def index_status(
 
     response = IndexStatusResponse(token=token, status=normalized)
     return response
+
+
+

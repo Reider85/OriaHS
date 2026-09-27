@@ -165,6 +165,19 @@ pushdown_selectivity = Gauge(
     "Last selectivity estimate for push-down filter decision.",
 )
 
+# ---------------------------------------------------------------------------
+# Throttle metrics — updated by OutboxThrottle (C-11)
+# ---------------------------------------------------------------------------
+outbox_throttled_total = Counter(
+    "outbox_throttled_total",
+    "Total index requests throttled (202 Accepted).",
+)
+
+outbox_reindex_triggered_total = Counter(
+    "outbox_reindex_triggered_total",
+    "Total full reindex triggers from outbox overflow.",
+)
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
@@ -187,4 +200,6 @@ __all__ = [
     "search_partial_total",
     "pushdown_total",
     "pushdown_selectivity",
+    "outbox_throttled_total",
+    "outbox_reindex_triggered_total",
 ]
