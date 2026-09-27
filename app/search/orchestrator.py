@@ -57,7 +57,7 @@ from app.reranker.circuit_breaker import CircuitBreakerOpen, RerankerCircuitBrea
 from app.reranker.exceptions import RerankerTimeoutException, RerankerUnavailableException
 from app.reranker.schemas import RerankCandidate, RerankResult
 from app.reranker.service import RerankerService
-from app.search.exceptions import QdrantTimeoutError, QdrantUnavailableError
+from app.search.exceptions import DeadlockError, QdrantTimeoutError, QdrantUnavailableError, StatementTimeoutError
 from app.search.fusion import rrf_fuse, weighted_fuse
 from app.search.facets import compute_facets
 from app.search.lexical import LexicalHit, lexical_search
@@ -349,7 +349,14 @@ class SearchOrchestrator:
         """Fold one finished channel task into ``outcome``."""
         try:
             result = task.result()
-        except (QdrantTimeoutError, QdrantUnavailableError) as exc:
+        except (QdrantTimeoutError, QdrantUnavailableError, StatementTimeoutError) as exc:
+            if is_vector:
+                outcome.vec_error, outcome.vec_done = exc, True
+            else:
+                outcome.lex_error, outcome.lex_done = exc, True
+            return
+        except DeadlockError as exc:
+            # Deadlock errors from lexical channel are already retried, treat as timeout
             if is_vector:
                 outcome.vec_error, outcome.vec_done = exc, True
             else:

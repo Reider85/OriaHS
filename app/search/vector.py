@@ -142,6 +142,8 @@ async def vector_search(
     Raises:
         QdrantTimeoutError: Qdrant did not answer within 100 ms.
         QdrantUnavailableError: Qdrant is unreachable / returned an error.
+        
+    Implements timeout retry with exponential backoff (C-09).
     """
     model_name = model_name or DEFAULT_MODEL_NAME
 
@@ -152,28 +154,40 @@ async def vector_search(
 
     qfilter = build_qdrant_filter(tenant_id, filters, model_name)
 
-    try:
-        scored = await asyncio.wait_for(
-            qdrant_client.search(
-                collection_name=COLLECTION_NAME,
-                query_vector=vec.tolist(),
-                query_filter=qfilter,
-                limit=k,
-                with_payload=True,
-            ),
-            timeout=SEARCH_TIMEOUT_SECONDS,
-        )
-    except TimeoutError as exc:
-        raise QdrantTimeoutError(
-            f"Qdrant search exceeded {SEARCH_TIMEOUT_SECONDS * 1000:.0f} ms"
-        ) from exc
-    except qdrant_exceptions.ApiException as exc:
-        status = getattr(exc, "status_code", None)
-        raise QdrantUnavailableError(
-            f"Qdrant unavailable (status={status}): {exc}"
-        ) from exc
-    except Exception as exc:  # aiohttp connection errors etc.
-        raise QdrantUnavailableError(f"Qdrant unavailable: {exc}") from exc
+    # Timeout retry logic (max 1 retry for Qdrant)
+    max_retries = 1
+    last_error = None
+    
+    for attempt in range(max_retries + 1):
+        try:
+            scored = await asyncio.wait_for(
+                qdrant_client.search(
+                    collection_name=COLLECTION_NAME,
+                    query_vector=vec.tolist(),
+                    query_filter=qfilter,
+                    limit=k,
+                    with_payload=True,
+                ),
+                timeout=SEARCH_TIMEOUT_SECONDS,
+            )
+            break  # Success, exit retry loop
+        except TimeoutError as exc:
+            last_error = QdrantTimeoutError(
+                f"Qdrant search exceeded {SEARCH_TIMEOUT_SECONDS * 1000:.0f} ms (retry {attempt + 1}/{max_retries + 1})"
+            )
+            if attempt < max_retries:
+                # Exponential backoff for retry
+                delay = SEARCH_TIMEOUT_SECONDS * (2 ** attempt)
+                await asyncio.sleep(delay)
+                continue
+            raise last_error
+        except qdrant_exceptions.ApiException as exc:
+            status = getattr(exc, "status_code", None)
+            raise QdrantUnavailableError(
+                f"Qdrant unavailable (status={status}): {exc}"
+            ) from exc
+        except Exception as exc:  # aiohttp connection errors etc.
+            raise QdrantUnavailableError(f"Qdrant unavailable: {exc}") from exc
 
     if not scored:
         return []

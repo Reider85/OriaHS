@@ -5,6 +5,10 @@ class StatementTimeoutError(Exception):
     """Raised when a PG query exceeds ``statement_timeout``."""
 
 
+class DeadlockError(Exception):
+    """Raised when a PG query encounters a deadlock."""
+
+
 class QdrantTimeoutError(Exception):
     """Raised when Qdrant does not respond within the timeout."""
 
