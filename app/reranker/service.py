@@ -13,9 +13,9 @@ from typing import Optional
 import numpy as np
 import torch
 from FlagEmbedding import FlagReranker
-from pydantic import ConfigDict
 
 from app.config import RerankerConfig
+from app.observability import metrics
 from app.reranker.exceptions import RerankerTimeoutException, RerankerUnavailableException
 from app.reranker.schemas import RerankCandidate, RerankResult
 
@@ -74,19 +74,25 @@ class RerankerService:
             return []
 
         start_time = time.time()
+
+        # Mock mode short-circuits BEFORE the lazy load: RERANKER_MOCK_MODE is the
+        # CI/dev escape hatch, and loading the 2.3 GB cross-encoder would defeat it.
+        if self._config.mock_mode:
+            return self._mock_rerank(docs, top_k)
+
         await self._lazy_load()
+
+        model = self._model
+        if model is None:  # pragma: no cover - _lazy_load raises or sets it
+            raise RerankerUnavailableException("Reranker model not loaded after lazy load")
 
         # Prepare pairs: [(query, doc_text), ...]
         pairs = [(query, doc.text) for doc in docs]
 
-        # Mock mode for development without GPU
-        if self._config.mock_mode:
-            return self._mock_rerank(docs, top_k)
-
         # Async inference with timeout
         try:
             scores = await asyncio.wait_for(
-                asyncio.to_thread(self._model.compute_score, pairs, batch_size=self._config.batch_size),
+                asyncio.to_thread(model.compute_score, pairs, batch_size=self._config.batch_size),
                 timeout=self._config.timeout_ms / 1000.0,
             )
         except Exception as exc:

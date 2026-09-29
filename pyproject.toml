@@ -73,6 +73,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "slow: long-running tests (embedding model load, docker-dependent).",
+    "gpu: requires a CUDA device; skipped by default, run with -m gpu.",
 ]
 
 [tool.coverage.run]

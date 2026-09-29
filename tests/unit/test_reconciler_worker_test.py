@@ -98,6 +98,7 @@ def _vector(batch: int = 1) -> np.ndarray:
 async def test_run_once_returns_zero_when_outbox_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     worker, _ = _build_worker()
     monkeypatch.setattr(outbox_mod, "index_lag_seconds", AsyncMock(return_value=0.0))
+    monkeypatch.setattr(outbox_mod, "count_pending", AsyncMock(return_value=0))
     monkeypatch.setattr(outbox_mod, "has_pending", AsyncMock(return_value=False))
     claimed = AsyncMock(side_effect=AssertionError("claim must not run on empty outbox"))
     monkeypatch.setattr(outbox_mod, "claim_pending", claimed)
@@ -112,6 +113,7 @@ async def test_run_once_claims_and_processes_batch(monkeypatch: pytest.MonkeyPat
     worker, _ = _build_worker()
     row = _row(content_hash="abc")
     monkeypatch.setattr(outbox_mod, "index_lag_seconds", AsyncMock(return_value=3.0))
+    monkeypatch.setattr(outbox_mod, "count_pending", AsyncMock(return_value=1))
     monkeypatch.setattr(outbox_mod, "has_pending", AsyncMock(return_value=True))
     monkeypatch.setattr(outbox_mod, "claim_pending", AsyncMock(return_value=[row]))
     mark_progress = AsyncMock()

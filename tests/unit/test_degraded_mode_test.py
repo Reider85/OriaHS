@@ -2,16 +2,42 @@
 
 import asyncio
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from unittest.mock import AsyncMock, patch
 
 from app.api.schemas import SearchRequest, SearchFilters
-from app.config import FeatureFlags
+from app.config import FeatureFlags, SearchConfig
 from app.search.exceptions import QdrantUnavailableError
 from app.search.orchestrator import SearchOrchestrator, _ChannelOutcome
 from app.search.lexical import LexicalHit
 from app.search.vector import VectorHit
 from app.observability import metrics
+
+
+def _build_orchestrator(*, vector_enabled=True, qdrant=None, flags=None):
+    """Orchestrator with every collaborator mocked.
+
+    ``_run_pipeline`` is patched by the caller with an **AsyncMock** (it is a
+    coroutine function), and the two channel coroutines are mocked too:
+    ``search()`` schedules them with ``asyncio.ensure_future`` *before* calling
+    ``_run_pipeline``, so leaving them real spawns tasks that blow up on the
+    mock session and are never retrieved.
+
+    ``config`` must be a real ``SearchConfig`` and not a mock: fusion reads
+    ``rrf_k`` from it, and a MagicMock turns every RRF score into a MagicMock
+    that cannot be sorted.
+    """
+    orchestrator = SearchOrchestrator(
+        session=AsyncMock(),
+        qdrant_client=qdrant or AsyncMock(),
+        embedding_service=AsyncMock(),
+        embedding_cache=AsyncMock(),
+        config=SearchConfig(),
+        feature_flags=flags or FeatureFlags(vector_search_enabled=vector_enabled),
+    )
+    orchestrator._lexical_channel = AsyncMock(return_value=[])
+    orchestrator._vector_channel = AsyncMock(return_value=[])
+    return orchestrator
 
 
 class TestDegradedMode:
@@ -68,29 +94,19 @@ class TestDegradedMode:
         search_request
     ):
         """Test that vector_search_enabled=False skips vector channel entirely."""
-        # Setup orchestrator with vector disabled
-        orchestrator = SearchOrchestrator(
-            session=AsyncMock(),
-            qdrant_client=AsyncMock(),
-            embedding_service=AsyncMock(),
-            embedding_cache=AsyncMock(),
-            config=AsyncMock(),
-            feature_flags=FeatureFlags(vector_search_enabled=False),
+        orchestrator = _build_orchestrator(
+            vector_enabled=False,
+            flags=FeatureFlags(vector_search_enabled=False),
         )
 
-        # Mock lexical and vector channels
-        lexical_task = asyncio.create_task(lambda: mock_lexical_hits)
-        vector_task = asyncio.create_task(lambda: mock_vector_hits)
-        
-        # Mock the pipeline to return the hits
-        with patch.object(orchestrator, '_run_pipeline') as mock_pipeline:
-            mock_pipeline.return_value = _ChannelOutcome(
+        with patch.object(
+            orchestrator, '_run_pipeline', new=AsyncMock(return_value=_ChannelOutcome(
                 lex_hits=mock_lexical_hits,
                 vec_hits=[],
                 lex_done=True,
                 vec_done=True,
-            )
-            
+            ))
+        ) as mock_pipeline:
             result = await orchestrator.search(search_request)
             
             # Verify vector channel was skipped
@@ -100,7 +116,7 @@ class TestDegradedMode:
             assert result.partial == False
             
             # Verify metric was incremented
-            assert metrics.search_degraded_total.labels(reason="vector_disabled")._value._value > 0
+            assert metrics.search_degraded_total.labels(reason="vector_disabled")._value.get() > 0
 
     @pytest.mark.asyncio
     async def test_qdrant_health_check_fail(
@@ -109,31 +125,19 @@ class TestDegradedMode:
         search_request
     ):
         """Test that Qdrant health check failure skips vector channel."""
-        # Setup orchestrator with failing health check
         mock_qdrant = AsyncMock()
         mock_qdrant.get_collection_info.side_effect = Exception("Qdrant unavailable")
         
-        orchestrator = SearchOrchestrator(
-            session=AsyncMock(),
-            qdrant_client=mock_qdrant,
-            embedding_service=AsyncMock(),
-            embedding_cache=AsyncMock(),
-            config=AsyncMock(),
-            feature_flags=FeatureFlags(vector_search_enabled=True),
-        )
+        orchestrator = _build_orchestrator(qdrant=mock_qdrant)
 
-        # Mock lexical channel
-        lexical_task = asyncio.create_task(lambda: mock_lexical_hits)
-        
-        # Mock the pipeline to return the hits
-        with patch.object(orchestrator, '_run_pipeline') as mock_pipeline:
-            mock_pipeline.return_value = _ChannelOutcome(
+        with patch.object(
+            orchestrator, '_run_pipeline', new=AsyncMock(return_value=_ChannelOutcome(
                 lex_hits=mock_lexical_hits,
                 vec_hits=[],
                 lex_done=True,
                 vec_done=True,
-            )
-            
+            ))
+        ) as mock_pipeline:
             result = await orchestrator.search(search_request)
             
             # Verify vector channel was skipped due to health check
@@ -143,7 +147,7 @@ class TestDegradedMode:
             assert result.partial == False
             
             # Verify metric was incremented
-            assert metrics.search_degraded_total.labels(reason="qdrant_unavailable")._value._value > 0
+            assert metrics.search_degraded_total.labels(reason="qdrant_unavailable")._value.get() > 0
 
     @pytest.mark.asyncio
     async def test_deadline_exceeded_partial_results(
@@ -151,37 +155,51 @@ class TestDegradedMode:
         mock_lexical_hits, 
         search_request
     ):
-        """Test that deadline exceeded returns partial results."""
-        # Setup orchestrator with very short timeout
+        """Test that deadline exceeded returns partial results (lex done, vec pending)."""
         search_request.timeout_ms = 10  # Very short timeout
         
-        orchestrator = SearchOrchestrator(
-            session=AsyncMock(),
-            qdrant_client=AsyncMock(),
-            embedding_service=AsyncMock(),
-            embedding_cache=AsyncMock(),
-            config=AsyncMock(),
-            feature_flags=FeatureFlags(vector_search_enabled=True),
-        )
+        orchestrator = _build_orchestrator()
 
-        # Mock the pipeline to simulate timeout
-        with patch.object(orchestrator, '_run_pipeline') as mock_pipeline:
-            mock_pipeline.return_value = _ChannelOutcome(
+        with patch.object(
+            orchestrator, '_run_pipeline', new=AsyncMock(return_value=_ChannelOutcome(
                 lex_hits=mock_lexical_hits,
                 vec_hits=[],
-                lex_done=False,  # Lexical didn't finish in time
+                lex_done=True,
                 vec_done=False,  # Vector didn't finish in time
                 partial=True,    # Deadline exceeded
-            )
-            
+            ))
+        ) as mock_pipeline:
             result = await orchestrator.search(search_request)
             
             # Verify partial results
             assert result.partial == True
-            assert result.degraded == True  # Both channels failed
+            assert result.degraded == True
+            assert result.total_lexical == len(mock_lexical_hits)
             
-            # Verify metric was incremented
-            assert metrics.search_partial_total._value._value > 0
+            # search_degraded_total инкрементится в _resolve_degraded (не
+            # замокан), а search_partial_total - внутри _collect_channels,
+            # который здесь замокан целиком, поэтому его не проверяем.
+            assert metrics.search_degraded_total.labels(reason="deadline_exceeded")._value.get() > 0
+
+    @pytest.mark.asyncio
+    async def test_both_channels_timed_out_raises(
+        self, 
+        search_request
+    ):
+        """Test that a fully timed-out search (no channel finished) raises TimeoutError."""
+        orchestrator = _build_orchestrator()
+
+        with patch.object(
+            orchestrator, '_run_pipeline', new=AsyncMock(return_value=_ChannelOutcome(
+                lex_hits=[],
+                vec_hits=[],
+                lex_done=False,
+                vec_done=False,
+                partial=True,
+            ))
+        ) as mock_pipeline:
+            with pytest.raises(TimeoutError):
+                await orchestrator.search(search_request)
 
     @pytest.mark.asyncio
     async def test_both_channels_work_normally(
@@ -191,24 +209,24 @@ class TestDegradedMode:
         search_request
     ):
         """Test that both channels work normally when enabled and healthy."""
-        orchestrator = SearchOrchestrator(
-            session=AsyncMock(),
-            qdrant_client=AsyncMock(),
-            embedding_service=AsyncMock(),
-            embedding_cache=AsyncMock(),
-            config=AsyncMock(),
-            feature_flags=FeatureFlags(vector_search_enabled=True),
-        )
+        orchestrator = _build_orchestrator()
 
-        # Mock the pipeline to return both channels
-        with patch.object(orchestrator, '_run_pipeline') as mock_pipeline:
-            mock_pipeline.return_value = _ChannelOutcome(
+        # Счётчики глобальные для процесса, поэтому сравниваем дельту, а не 0.
+        reasons = ("vector_disabled", "qdrant_unavailable", "deadline_exceeded")
+        before = {
+            reason: metrics.search_degraded_total.labels(reason=reason)._value.get()
+            for reason in reasons
+        }
+        partial_before = metrics.search_partial_total._value.get()
+
+        with patch.object(
+            orchestrator, '_run_pipeline', new=AsyncMock(return_value=_ChannelOutcome(
                 lex_hits=mock_lexical_hits,
                 vec_hits=mock_vector_hits,
                 lex_done=True,
                 vec_done=True,
-            )
-            
+            ))
+        ) as mock_pipeline:
             result = await orchestrator.search(search_request)
             
             # Verify both channels worked
@@ -217,9 +235,10 @@ class TestDegradedMode:
             assert result.degraded == False
             assert result.partial == False
             
-            # Verify metrics were not incremented
-            assert metrics.search_degraded_total._value._value == 0
-            assert metrics.search_partial_total._value._value == 0
+            # Verify degraded/partial metrics were not touched by this request
+            for reason in reasons:
+                assert metrics.search_degraded_total.labels(reason=reason)._value.get() == before[reason]
+            assert metrics.search_partial_total._value.get() == partial_before
 
     @pytest.mark.asyncio
     async def test_qdrant_exception_during_search(
@@ -228,25 +247,17 @@ class TestDegradedMode:
         search_request
     ):
         """Test that Qdrant exception during search triggers degraded mode."""
-        orchestrator = SearchOrchestrator(
-            session=AsyncMock(),
-            qdrant_client=AsyncMock(),
-            embedding_service=AsyncMock(),
-            embedding_cache=AsyncMock(),
-            config=AsyncMock(),
-            feature_flags=FeatureFlags(vector_search_enabled=True),
-        )
+        orchestrator = _build_orchestrator()
 
-        # Mock the pipeline to simulate Qdrant exception
-        with patch.object(orchestrator, '_run_pipeline') as mock_pipeline:
-            mock_pipeline.return_value = _ChannelOutcome(
+        with patch.object(
+            orchestrator, '_run_pipeline', new=AsyncMock(return_value=_ChannelOutcome(
                 lex_hits=mock_lexical_hits,
                 vec_hits=[],
                 lex_done=True,
                 vec_done=True,
                 vec_error=QdrantUnavailableError("Qdrant failed"),
-            )
-            
+            ))
+        ) as mock_pipeline:
             result = await orchestrator.search(search_request)
             
             # Verify degraded mode was triggered

@@ -181,7 +181,7 @@ async def count_all_pending(session: AsyncSession) -> int:
             "AND next_retry_at <= now() + interval '1 minute'"
         )
     )
-    return int(await result.scalar_one() or 0)
+    return int(result.scalar_one() or 0)
 
 
 async def index_lag_seconds(session: AsyncSession) -> float:

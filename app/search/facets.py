@@ -15,7 +15,8 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import cast, func, select, text
+from sqlalchemy.dialects.postgresql import ARRAY, TEXT
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,11 +52,15 @@ async def compute_facets(
     -------
     dict mapping field name to list of FacetBucket, sorted by count descending.
     Returns empty dict if doc_ids is empty or facet_fields is None.
+    
+    A field whose query succeeded but matched nothing is present with an empty
+    list; a field whose query failed is omitted entirely (None from the
+    _compute_* helpers), so clients can tell "no matches" from "unknown".
     """
     if not doc_ids or not facet_fields:
         return {}
 
-    results = {}
+    results: dict[str, list[FacetBucket]] = {}
     
     for field in facet_fields:
         if field == "tags":
@@ -66,30 +71,41 @@ async def compute_facets(
             logger.warning(f"Unsupported facet field: {field}")
             continue
         
-        if buckets:
-            results[field] = buckets
+        if buckets is not None:
+            # SQL уже ограничивает через LIMIT, но режем и здесь: контракт
+            # top_n не должен зависеть от того, какой БД под капотом.
+            results[field] = buckets[:top_n]
 
     return results
 
 
 async def _compute_tag_facets(
     doc_ids: list[UUID], session: AsyncSession, top_n: int
-) -> list[FacetBucket]:
+) -> list[FacetBucket] | None:
     """Count individual tags from the documents array field."""
     try:
         # Set statement timeout to avoid blocking the main response
         await session.execute(text("SET LOCAL statement_timeout = '50ms'"))
-        
+
+        # func.array(..., type_=...) не существует: любой type_/kwargs уходит
+        # в generic Function и роняет построение запроса. unnesting делаем
+        # через unnest() + явный cast пустого массива, чтобы документы без
+        # тегов не исчезали из GROUP BY.
+        tag = func.unnest(
+            func.coalesce(Document.tags, cast(text("'{}'"), ARRAY(TEXT)))
+        ).label("tag")
+
         stmt = (
             select(
-                func.unnest(func.coalesce(func.array(Document.tags, type_=func.array(str)), func.array([]))).label("tag"),
+                tag,
                 func.count().label("count"),
             )
             .where(
                 Document.id.in_(doc_ids),
                 Document.deleted_at.is_(None),
+                Document.tags.isnot(None),
             )
-            .group_by(func.unnest(func.coalesce(func.array(Document.tags, type_=func.array(str)), func.array([]))))
+            .group_by(tag)
             .order_by(func.count().desc())
             .limit(top_n)
         )
@@ -104,12 +120,12 @@ async def _compute_tag_facets(
         
     except Exception as exc:
         logger.warning("Tag facets computation failed, returning empty", extra={"error": str(exc)})
-        return []
+        return None
 
 
 async def _compute_category_facets(
     doc_ids: list[UUID], session: AsyncSession, top_n: int
-) -> list[FacetBucket]:
+) -> list[FacetBucket] | None:
     """Count category values from the documents JSONB attributes field."""
     try:
         # Set statement timeout to avoid blocking the main response
@@ -140,7 +156,7 @@ async def _compute_category_facets(
         
     except Exception as exc:
         logger.warning("Category facets computation failed, returning empty", extra={"error": str(exc)})
-        return []
+        return None
 
 
 # Import Document model at the end to avoid circular imports

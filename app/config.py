@@ -129,8 +129,11 @@ class CircuitBreakerConfig(BaseSettings):
 
     error_rate_threshold: float = Field(default=0.05, ge=0.0, le=1.0)
     latency_p95_threshold_ms: int = Field(default=500, ge=1)
-    window_seconds: int = Field(default=60, ge=1)
-    cooldown_seconds: int = Field(default=60, ge=1)
+    # Окно и cooldown - длительности, а не счётчики: sub-second значения
+    # (0.1s) нужны для быстрых тестов и нереальны для прод-конфига, но
+    # запрещать их int-типом было ошибкой.
+    window_seconds: float = Field(default=60.0, gt=0.0)
+    cooldown_seconds: float = Field(default=60.0, ge=0.0)
 
 
 class EvalConfig(BaseSettings):

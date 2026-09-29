@@ -128,10 +128,12 @@ class TestRerankerCircuitBreaker:
         async def mock_fn():
             raise ValueError("probe_failed")
         
-        # Half-open failure should reopen breaker
-        with pytest.raises(ValueError):
-            await breaker.call(mock_fn)
+        # Half-open failure should reopen breaker. call() не пробрасывает
+        # исключение, а возвращает его как значение результата
+        # (контракт зафиксирован в SearchOrchestrator._rerank).
+        result = await breaker.call(mock_fn)
         
+        assert isinstance(result, ValueError)
         assert breaker.is_open()
         assert breaker.state() == "open"
         assert time.time() - breaker._opened_at < 0.05  # cooldown just reset
@@ -208,8 +210,9 @@ class TestRerankerCircuitBreaker:
         for latency in range(100, 1100, 100):
             await breaker._record_call(time.time() * 1000, latency, True)
         
-        # p95 should be 950 (95th percentile of 10 values)
-        assert abs(breaker._latency_p95() - 950.0) < 1.0
+        # p95 = 955: numpy.interp-linear по 0.95*(n-1) = 8.55,
+        # т.е. между 900 и 1000 (не "среднее 9-го и 10-го" = 950).
+        assert abs(breaker._latency_p95() - 955.0) < 1.0
 
     def test_state_value_mapping(self) -> None:
         """Test state to numeric value mapping for metrics."""
@@ -257,31 +260,25 @@ class TestCircuitBreakerIntegration:
         assert len(exceptions) >= 11  # at least 11 failures
 
     async def test_metrics_incrementation(self) -> None:
-        """Test that metrics are properly incremented."""
-        # Clear metrics registry for clean test
-        collectors = list(REGISTRY._collector_to_names.keys())
-        for collector in collectors:
-            if collector.name.startswith("circuit_breaker_"):
-                REGISTRY.unregister(collector)
-        
-        # Re-import metrics to get fresh instances
-        from importlib import reload
-        import app.observability.metrics
-        reload(app.observability.metrics)
-        
+        """Test that circuit breaker metrics are actually incremented."""
+        # Глобальный REGISTRY не трогаем: reload(app.observability.metrics)
+        # падает с DuplicateTimeseries, потому что остальные модули уже держат
+        # ссылки на зарегистрированные объекты. Считаем дельту счётчика.
         config = CircuitBreakerConfig()
         breaker = RerankerCircuitBreaker(config)
         
         async def mock_fn():
             return "success"
         
-        # Record some calls
+        successes = circuit_breaker_requests_total.labels(
+            component="reranker", result="success"
+        )
+        before = successes._value.get()
+        
         for _ in range(5):
             await breaker.call(mock_fn)
         
-        # Check that metrics were incremented
-        # Note: This tests the metric registration, actual incrementing is tested in unit tests
-        assert circuit_breaker_requests_total._value._value._lock is not None
+        assert successes._value.get() == before + 5
 
 
 class TestCircuitBreakerConfig:

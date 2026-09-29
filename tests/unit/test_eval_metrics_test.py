@@ -91,11 +91,13 @@ class TestNdcgAt10:
         retrieved = ["doc1", "doc2", "doc6", "doc7", "doc8", "doc9", "doc10", "doc11", "doc12", "doc13"]
         relevant = {"doc1", "doc2", "doc3"}
         
-        # DCG = 1/log2(1) + 1/log2(2) = 1 + 0.5 = 1.5
-        # IDCG = 1/log2(1) + 1/log2(2) + 1/log2(3) = 1 + 0.5 + 0.333 = 1.833
-        # nDCG = 1.5 / 1.833 = 0.818
+        # Стандартная формула nDCG: discount 1/log2(rank+1) при rank с 1,
+        # т.е. первый документ получает скидку 1/log2(2) = 1 (не 1/log2(1)).
+        # DCG  = 1/log2(2) + 1/log2(3)        = 1 + 0.6309 = 1.6309
+        # IDCG = 1/log2(2) + 1/log2(3) + 1/log2(4) = 1 + 0.6309 + 0.5 = 2.1309
+        # nDCG = 1.6309 / 2.1309 = 0.7654
         result = ndcg_at_10(retrieved, relevant)
-        assert result == pytest.approx(0.818, rel=1e-3)
+        assert result == pytest.approx(0.7654, rel=1e-3)
 
 
 class TestMrr:
@@ -123,7 +125,7 @@ class TestMrr:
         relevant = {"doc1", "doc3", "doc5"}
         
         result = mrr(retrieved, relevant)
-        assert result == pytest.approx(0.333, rel=1e-3)  # 1/3
+        assert result == pytest.approx(1 / 3, rel=1e-6)  # doc1 на 3-й позиции
     
     def test_no_relevant_in_top_10(self):
         """Test when no relevant docs in top-10."""

@@ -202,7 +202,11 @@ class SearchOrchestrator:
         if not outcome.lex_done and not outcome.vec_done:
             raise TimeoutError("Search timeout: both channels exceeded deadline")
 
-        degraded = self._resolve_degraded(outcome)
+        degraded = self._resolve_degraded(
+            outcome,
+            vector_disabled=vector_disabled,
+            qdrant_unavailable=qdrant_unavailable,
+        )
 
         lex_hits, vec_hits = outcome.lex_hits, outcome.vec_hits
         fused = self._fuse(req, lex_hits, vec_hits)
@@ -267,7 +271,7 @@ class SearchOrchestrator:
             metrics.pushdown_selectivity.set(
                 decision.selectivity if decision.selectivity is not None else 1.0,
             )
-            metrics.qdrant_pushdown_rate.labels(result=decision.reason).inc()
+            metrics.qdrant_pushdown_rate_total.labels(result=decision.reason).inc()
 
             if decision.use_pushdown:
                 pushdown_ids = decision.doc_ids
@@ -582,15 +586,15 @@ class SearchOrchestrator:
         """Dispatch to the requested fusion strategy (ARCHITECT §7.1, §7.2)."""
         if req.fusion == "weighted" and self._flags.weighted_fusion_enabled:
             # Track weighted fusion usage
-            metrics.fusion_strategy_usage.labels(strategy="weighted").inc()
+            metrics.fusion_strategy_usage_total.labels(strategy="weighted").inc()
             return weighted_fuse(lex_hits, vec_hits, alpha=req.fusion_alpha)
         if req.fusion == "weighted":
             # Track weighted fusion fallback to RRF
-            metrics.fusion_strategy_usage.labels(strategy="rrf").inc()
+            metrics.fusion_strategy_usage_total.labels(strategy="rrf").inc()
             logger.warning("weighted_fusion_enabled=False, falling back to RRF")
         else:
             # Track RRF usage
-            metrics.fusion_strategy_usage.labels(strategy="rrf").inc()
+            metrics.fusion_strategy_usage_total.labels(strategy="rrf").inc()
         return rrf_fuse(lex_hits, vec_hits, k=self._config.rrf_k)
 
     def _apply_rerank(
@@ -691,13 +695,30 @@ class SearchOrchestrator:
             )
         return hits
 
-    def _resolve_degraded(self, outcome: _ChannelOutcome) -> bool:
+    def _resolve_degraded(
+        self,
+        outcome: _ChannelOutcome,
+        *,
+        vector_disabled: bool = False,
+        qdrant_unavailable: bool = False,
+    ) -> bool:
         """``degraded`` is True only when a *channel* was lost (C-05, C-09).
 
         A skipped rerank is reported as ``rerank_degraded`` on the per-hit
         ``debug`` and deliberately does not flip this flag.
+
+        "Lost" covers three cases, all of which already have a
+        ``search_degraded_total`` reason label: the vector channel was disabled
+        by flag, Qdrant failed its health check, and a channel raised.
+        ``partial`` counts too: the client gets an incomplete answer, and the
+        reason exists in the metric set (``deadline_exceeded``).
         """
         degraded = False
+        if vector_disabled or qdrant_unavailable:
+            degraded = True
+        if outcome.partial:
+            degraded = True
+            metrics.search_degraded_total.labels(reason="deadline_exceeded").inc()
         if outcome.vec_error is not None:
             degraded = True
             logger.warning(

@@ -66,7 +66,7 @@ class TestOutboxThrottle:
         session = async_context_manager.session
         
         # Mock the session.execute to return a result with scalar_one
-        result_mock = AsyncMock()
+        result_mock = MagicMock()
         result_mock.scalar_one.return_value = 0
         session.execute.return_value = result_mock
         
@@ -107,7 +107,7 @@ class TestOutboxThrottle:
         session = async_context_manager.session
         
         # Mock the session.execute to return a result with scalar_one
-        result_mock = AsyncMock()
+        result_mock = MagicMock()
         result_mock.scalar_one.return_value = 60000
         session.execute.return_value = result_mock
 
@@ -209,7 +209,7 @@ class TestOutboxThrottle:
         session = async_context_manager.session
         
         # Mock the session.execute to return a result with scalar_one
-        result_mock = AsyncMock()
+        result_mock = MagicMock()
         result_mock.scalar_one.return_value = 50000
         session.execute.return_value = result_mock
         
@@ -247,7 +247,7 @@ class TestOutboxThrottle:
         session = async_context_manager.session
         
         # Mock the session.execute to return a result with scalar_one
-        result_mock = AsyncMock()
+        result_mock = MagicMock()
         result_mock.scalar_one.return_value = 30000
         session.execute.return_value = result_mock
     

@@ -1,3 +1,65 @@
+name: oriahs
+
+# Общая база для всех процессов приложения (api, reconciler, digest и
+# one-shot jobs). Один образ — одна копия зависимостей, различаются только
+# `command` и профиль.
+x-app-base: &app-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: ${APP_IMAGE:-oriahs:dev}
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    # Внутри compose-сети хосты — имена сервисов, а не localhost из .env.
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    POSTGRES_DB: ${POSTGRES_DB:-orlahs}
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    REDIS_DB: ${REDIS_DB:-0}
+    QDRANT_URL: http://qdrant:6333
+    QDRANT_GRPC_URL: grpc://qdrant:6334
+    QDRANT_COLLECTION: ${QDRANT_COLLECTION:-documents}
+    QDRANT_REPLICATION_FACTOR: ${QDRANT_REPLICATION_FACTOR:-1}
+    # CRITICAL-фаза: Reranker (C-01/C-03/C-04), circuit breaker (C-03),
+    # offline-eval (C-07), push-down (C-10), throttle (C-11), feature flags.
+    RERANKER_MODEL_NAME: ${RERANKER_MODEL_NAME:-BAAI/bge-reranker-v2-m3}
+    RERANKER_DEVICE: ${RERANKER_DEVICE:-auto}
+    RERANKER_MOCK_MODE: ${RERANKER_MOCK_MODE:-false}
+    RERANKER_WARMUP: ${RERANKER_WARMUP:-false}
+    RERANKER_BATCH_SIZE: ${RERANKER_BATCH_SIZE:-32}
+    RERANKER_TIMEOUT_MS: ${RERANKER_TIMEOUT_MS:-500}
+    RERANKER_SPECULATIVE_ENABLED: ${RERANKER_SPECULATIVE_ENABLED:-true}
+    CIRCUIT_BREAKER_ERROR_RATE_THRESHOLD: ${CIRCUIT_BREAKER_ERROR_RATE_THRESHOLD:-0.05}
+    CIRCUIT_BREAKER_LATENCY_P95_THRESHOLD_MS: ${CIRCUIT_BREAKER_LATENCY_P95_THRESHOLD_MS:-500}
+    CIRCUIT_BREAKER_WINDOW_SECONDS: ${CIRCUIT_BREAKER_WINDOW_SECONDS:-60}
+    CIRCUIT_BREAKER_COOLDOWN_SECONDS: ${CIRCUIT_BREAKER_COOLDOWN_SECONDS:-60}
+    EVAL_DATASET_PATH: ${EVAL_DATASET_PATH:-eval/datasets/baseline_v1.jsonl}
+    EVAL_BASELINES_DIR: ${EVAL_BASELINES_DIR:-eval/baselines/}
+    PUSHDOWN_SELECTIVITY_THRESHOLD: ${PUSHDOWN_SELECTIVITY_THRESHOLD:-0.1}
+    PUSHDOWN_MAX_CANDIDATE_IDS: ${PUSHDOWN_MAX_CANDIDATE_IDS:-5000}
+    THROTTLE_PENDING_WARN_THRESHOLD: ${THROTTLE_PENDING_WARN_THRESHOLD:-50000}
+    THROTTLE_PENDING_REINDEX_THRESHOLD: ${THROTTLE_PENDING_REINDEX_THRESHOLD:-100000}
+    VECTOR_SEARCH_ENABLED: ${VECTOR_SEARCH_ENABLED:-true}
+    RERANK_ENABLED: ${RERANK_ENABLED:-true}
+    WEIGHTED_FUSION_ENABLED: ${WEIGHTED_FUSION_ENABLED:-true}
+    PUSHDOWN_ENABLED: ${PUSHDOWN_ENABLED:-true}
+    HF_HOME: /cache/huggingface
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ENVIRONMENT: ${ENVIRONMENT:-dev}
+    DEBUG: ${DEBUG:-true}
+  volumes:
+    # Кэш моделей (BAAI/bge-m3, bge-reranker-v2-m3) переживает пересборку
+    # образа и не скачивается заново при каждом `up`.
+    - hf_cache:/cache/huggingface
+  networks:
+    - oriahs
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -17,6 +79,8 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+    networks:
+      - oriahs
 
   qdrant:
     image: qdrant/qdrant:v1.12.4
@@ -33,6 +97,8 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+    networks:
+      - oriahs
 
   redis:
     image: redis:7-alpine
@@ -47,6 +113,34 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - oriahs
+
+  # Prometheus — источник данных для всех дашбордов Grafana (MVP + CRITICAL,
+  # C-13). Без него 4 critical-дашборда отдают пустые панели, потому что
+  # grafana/provisioning/datasources/datasources.yml ссылается на prometheus:9090.
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: oriahs-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-7d}
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - oriahs
 
   grafana:
     image: grafana/grafana:latest
@@ -55,15 +149,148 @@ services:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
-      GF_USERS_ALLOW_SIGN_UP: false
+      GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
     depends_on:
-      - postgres
-      - qdrant
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      prometheus:
+        # service_started, а не service_healthy: Grafana всё равно ретраит
+        # datasource, аhealthcheck Prometheus не должен быть шлюзом для старта
+        # всего стека (в prom/prometheus может не быть wget).
+        condition: service_started
     restart: unless-stopped
+    networks:
+      - oriahs
+
+  # ===== Приложение (профиль app) =====
+
+  api:
+    <<: *app-base
+    container_name: oriahs-api
+    profiles: ["app"]
+    command:
+      - uvicorn
+      - app.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --workers=${API_WORKERS:-1}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Outbox-реконсилятор: читает search_outbox, эмбедит и пишет в Qdrant.
+  reconciler:
+    <<: *app-base
+    container_name: oriahs-reconciler
+    profiles: ["app"]
+    command: ["python", "-m", "app.reconciler.worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Дайджест dead-letter: периодическая сводка по зависшим записям outbox.
+  digest:
+    <<: *app-base
+    container_name: oriahs-digest
+    profiles: ["app"]
+    command: ["python", "-m", "app.reconciler.digest"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ===== One-shot jobs (без профиля — доступны и при --no-app) =====
+
+  # Схема БД. scripts/infra_up.sh вызывает его до старта api/reconciler.
+  # Идемпотентен: alembic применяет только неприменённые ревизии
+  # (включая 005_eval_datasets из C-07).
+  migrate:
+    <<: *app-base
+    container_name: oriahs-migrate
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Коллекция documents + payload-индексы из qdrant_collections.yaml (P-04).
+  # Без этого шага векторный канал не работает: коллекции не существует.
+  init-qdrant:
+    <<: *app-base
+    container_name: oriahs-init-qdrant
+    restart: "no"
+    command: ["python", "scripts/init_qdrant.py"]
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
+  # ===== Инструменты (профиль tools / nightly) =====
+
+  # Сид eval-корпуса: документы с фиксированными UUID из
+  # eval/datasets/baseline_v1.jsonl, без них nightly-eval (C-07) даёт нули.
+  seed-eval:
+    <<: *app-base
+    container_name: oriahs-seed-eval
+    profiles: ["tools"]
+    restart: "no"
+    command:
+      - python
+      - scripts/seed_eval_corpus.py
+      - --dataset=${EVAL_DATASET_PATH:-eval/datasets/baseline_v1.jsonl}
+      - --filler=${SEED_FILLER_DOCS:-200}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
+  # Ночной оффлайн-eval (C-07): разовый job, не демон.
+  # scripts/infra_up.sh --nightly / scripts/run_nightly_eval.sh.
+  nightly-eval:
+    <<: *app-base
+    container_name: oriahs-nightly-eval
+    profiles: ["nightly"]
+    restart: "no"
+    command: ["python", "-m", "app.eval"]
+    # Прогоняет реальный SearchOrchestrator: нужны и БД, и Qdrant.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
 
 volumes:
   pgdata:
   qdrant_data:
   redis_data:
+  prometheus_data:
+  grafana_data:
+  hf_cache:
+
+networks:
+  oriahs:
+    driver: bridge

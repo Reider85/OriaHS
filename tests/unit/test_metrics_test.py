@@ -14,7 +14,12 @@ from app.observability import metrics
 
 @pytest.fixture(autouse=True)
 def _reset_metrics() -> None:  # type: ignore[misc]
-    """Reset all metric values between tests to avoid cross-test pollution."""
+    """Reset all metric values between tests to avoid cross-test pollution.
+
+    ``clear()`` is a no-op for unlabeled metrics in prometheus_client
+    (``if not self._labelnames: return``), so the underlying value has to be
+    reset explicitly - otherwise counters leak between test modules.
+    """
     for collector in [
         metrics.search_latency_ms,
         metrics.reranker_latency_ms,
@@ -27,11 +32,14 @@ def _reset_metrics() -> None:  # type: ignore[misc]
         metrics.circuit_breaker_state,
         metrics.circuit_breaker_opened_total,
         metrics.circuit_breaker_requests_total,
-        metrics.fusion_strategy_usage,
-        metrics.qdrant_pushdown_rate,
+        metrics.fusion_strategy_usage_total,
+        metrics.qdrant_pushdown_rate_total,
     ]:
         if hasattr(collector, "clear"):
             collector.clear()
+        value = getattr(collector, "_value", None)
+        if value is not None:
+            value.set(0)
     yield
 
 
@@ -136,8 +144,12 @@ class TestRerankerLatencyMs:
     def test_observe_increments_bucket(self) -> None:
         metrics.reranker_latency_ms.labels(device="cuda", mock=False).observe(150)
         output = _gather()
-        assert 'reranker_latency_ms_bucket{device="cuda",mock="false",le="150.0"}' in output
-        assert 'reranker_latency_ms_count{device="cuda",mock="false"}' in output
+        # Labels в exposition отсортированы по имени: device, le, mock;
+        # bool рендерится как "False". Bucket'ы [10..1000], поэтому 150ms
+        # попадает в le="200.0" (а не в le="150.0", такого bucket'а нет).
+        assert 'reranker_latency_ms_bucket{device="cuda",le="100.0",mock="False"} 0.0' in output
+        assert 'reranker_latency_ms_bucket{device="cuda",le="200.0",mock="False"} 1.0' in output
+        assert 'reranker_latency_ms_count{device="cuda",mock="False"} 1.0' in output
     
     def test_multiple_labels(self) -> None:
         metrics.reranker_latency_ms.labels(device="cuda", mock=False).observe(50)
@@ -145,8 +157,8 @@ class TestRerankerLatencyMs:
         output = _gather()
         assert 'device="cuda"' in output
         assert 'device="cpu"' in output
-        assert 'mock="false"' in output
-        assert 'mock="true"' in output
+        assert 'mock="False"' in output
+        assert 'mock="True"' in output
 
 
 class TestFusionStrategyUsage:
@@ -157,12 +169,12 @@ class TestFusionStrategyUsage:
         assert "fusion_strategy_usage" in output
     
     def test_inc_with_label(self) -> None:
-        metrics.fusion_strategy_usage.labels(strategy="rrf").inc()
-        metrics.fusion_strategy_usage.labels(strategy="weighted").inc()
-        metrics.fusion_strategy_usage.labels(strategy="weighted").inc()
+        metrics.fusion_strategy_usage_total.labels(strategy="rrf").inc()
+        metrics.fusion_strategy_usage_total.labels(strategy="weighted").inc()
+        metrics.fusion_strategy_usage_total.labels(strategy="weighted").inc()
         output = _gather()
-        assert 'fusion_strategy_usage{strategy="rrf"} 1.0' in output
-        assert 'fusion_strategy_usage{strategy="weighted"} 2.0' in output
+        assert 'fusion_strategy_usage_total{strategy="rrf"} 1.0' in output
+        assert 'fusion_strategy_usage_total{strategy="weighted"} 2.0' in output
 
 
 class TestCircuitBreakerState:
@@ -218,12 +230,12 @@ class TestQdrantPushdownRate:
         assert "qdrant_pushdown_rate" in output
     
     def test_inc_with_label(self) -> None:
-        metrics.qdrant_pushdown_rate.labels(result="used").inc()
-        metrics.qdrant_pushdown_rate.labels(result="skipped").inc()
-        metrics.qdrant_pushdown_rate.labels(result="skipped").inc()
+        metrics.qdrant_pushdown_rate_total.labels(result="used").inc()
+        metrics.qdrant_pushdown_rate_total.labels(result="skipped").inc()
+        metrics.qdrant_pushdown_rate_total.labels(result="skipped").inc()
         output = _gather()
-        assert 'qdrant_pushdown_rate{result="used"} 1.0' in output
-        assert 'qdrant_pushdown_rate{result="skipped"} 2.0' in output
+        assert 'qdrant_pushdown_rate_total{result="used"} 1.0' in output
+        assert 'qdrant_pushdown_rate_total{result="skipped"} 2.0' in output
 
 
 class TestAllMetricsExposed:
@@ -242,11 +254,11 @@ class TestAllMetricsExposed:
             "dead_letters_total",
             # Critical metrics (C-12)
             "reranker_latency_ms",
-            "fusion_strategy_usage",
+            "fusion_strategy_usage_total",
             "circuit_breaker_state",
             "circuit_breaker_opened_total",
             "circuit_breaker_requests_total",
-            "qdrant_pushdown_rate",
+            "qdrant_pushdown_rate_total",
         ],
     )
     def test_metric_present(self, metric_name: str) -> None:

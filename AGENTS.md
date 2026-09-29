@@ -3,10 +3,13 @@
 ## Quick commands
 
 ```bash
+./scripts/infra_up.sh        # up the whole stack (PowerShell: .\scripts\infra_up.ps1)
+./scripts/infra_down.sh      # stop it + alembic downgrade base (-v drops volumes)
+
 uv sync                    # install deps into .venv
 uv run uvicorn app.main:app --reload --port 8000   # dev server
 
-uv run ruff check app/ tests/   # lint
+uv run ruff check app/ tests/ scripts/   # lint
 uv run ruff format app/ tests/  # format
 uv run mypy app/                # typecheck (strict, pydantic plugin)
 uv run pytest                   # all tests
@@ -19,10 +22,26 @@ Order matters: **lint → typecheck → test**.
 ## Infrastructure (docker-compose)
 
 ```bash
-cp .env.example .env
-docker compose up -d   # PostgreSQL 16 (pgvector), Qdrant 1.12, Redis 7, Grafana
-uv run alembic upgrade head   # apply SQL migrations after PG is up
+./scripts/infra_up.sh                    # .env + build + up + extensions + alembic + init_qdrant + /health/ready
+./scripts/infra_up.sh --no-app           # infra only (postgres, qdrant, redis, prometheus, grafana)
+./scripts/infra_up.sh --seed-eval        # seed the eval corpus (C-07) and wait for the outbox
+./scripts/infra_down.sh -v --purge       # full reset: volumes + image + build cache
 ```
+
+Manual equivalent (what the scripts do, in order):
+
+```bash
+cp .env.example .env
+docker compose --profile app up -d
+docker compose exec postgres psql -U postgres -d orlahs -c "CREATE EXTENSION IF NOT EXISTS vector;"
+docker compose run --rm migrate        # alembic upgrade head
+docker compose run --rm init-qdrant    # scripts/init_qdrant.py
+```
+
+Compose profiles: default (infra + one-shot `migrate`/`init-qdrant`), `app`
+(`api`, `reconciler`, `digest`), `tools` (`seed-eval`), `nightly`
+(`nightly-eval`, one-shot). Prometheus (`monitoring/prometheus/prometheus.yml`)
+is the datasource behind all 8 Grafana dashboards.
 
 PostgreSQL extension note: use `CREATE EXTENSION IF NOT EXISTS vector;` (not `pgvector`).
 

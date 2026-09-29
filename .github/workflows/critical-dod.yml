@@ -10,106 +10,64 @@ on:
 jobs:
   critical-dod:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: oriahs
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      
-      qdrant:
-        image: qdrant/qdrant:v1.12.4
-        ports:
-          - 6333:6333
-        options: >-
-          --health-cmd curl -f http://localhost:6333/
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd redis-cli ping
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    timeout-minutes: 40
+
+    env:
+      # CI-runner без GPU: cross-encoder не грузим (2.3 GB + CPU-латентность),
+      # rerank возвращает RRF-скор. DoD-тест nDCG-улучшения при mock_mode
+      # штатно скипается (tests/e2e/test_critical_dod.py:44).
+      RERANKER_MOCK_MODE: "true"
+      # Порты берутся из .env, который создаёт scripts/infra_up.sh
+      # (POSTGRES_PORT=5433, чтобы не конфликтовать с локальным PostgreSQL).
 
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.12'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install uv
         uv sync
-    
-    - name: Start services
+
+    # Единая точка подъёма: .env, контейнеры, healthchecks, PG-расширения,
+    # alembic upgrade head, коллекция Qdrant.
+    - name: Bring up infrastructure
+      run: bash scripts/infra_up.sh --no-app
+
+    - name: Verify stack
       run: |
-        docker-compose up -d
-        python -c "
-        import time
-        import requests
-        import subprocess
-        
-        # Wait for services to be ready
-        time.sleep(30)
-        
-        # Wait for PostgreSQL
-        while True:
-            try:
-                requests.get('http://localhost:5432', timeout=5)
-                break
-            except:
-                time.sleep(2)
-        
-        # Wait for Qdrant
-        while True:
-            try:
-                requests.get('http://localhost:6333', timeout=5)
-                break
-            except:
-                time.sleep(2)
-        
-        # Wait for Redis
-        while True:
-            try:
-                requests.get('http://localhost:6379', timeout=5)
-                break
-            except:
-                time.sleep(2)
-        
-        print('All services ready')
-        "
-    
-    - name: Run migrations
+        docker compose --project-directory "$PWD" -f docker-compose.yml ps
+        curl -fsS "http://localhost:$(grep -E '^PROMETHEUS_PORT=' .env | cut -d= -f2)/-/healthy"
+
+    # NFR-часть scripts/run_dod_check_critical.sh ходит в живой API на :8000,
+    # поэтому поднимаем его на хосте (образ в CI не собираем — torch весит
+    # слишком долго для 40-минутного лимита).
+    - name: Start API for NFR checks
       run: |
-        uv run alembic upgrade head
-    
+        nohup uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/api.log 2>&1 &
+        for _ in $(seq 1 60); do
+          if curl -fsS http://localhost:8000/health/live > /dev/null; then
+            echo "api is up"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "api did not start"; cat /tmp/api.log; exit 1
+
     - name: Run Critical DoD validation
-      run: |
-        bash scripts/run_dod_check_critical.sh
-    
+      run: bash scripts/run_dod_check_critical.sh
+
     - name: Run unit tests
-      run: |
-        uv run pytest tests/unit/ -x
-    
+      run: uv run pytest tests/unit/ -x
+
     - name: Run integration tests
-      run: |
-        uv run pytest tests/integration/ -x --tb=short
+      run: uv run pytest tests/integration/ -x --tb=short
+
+    - name: Tear down stack
+      if: always()
+      run: bash scripts/infra_down.sh -v --skip-migrations

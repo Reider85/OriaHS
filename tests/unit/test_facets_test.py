@@ -25,7 +25,7 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_empty_doc_ids_returns_empty(self):
         """Empty doc_ids list should return empty dict."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         session = AsyncMock()
         result = await compute_facets([], session, ["tags"], 20)
@@ -34,7 +34,7 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_none_facet_fields_returns_empty(self):
         """None facet_fields should return empty dict."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         session = AsyncMock()
         result = await compute_facets([uuid4()], session, None, 20)
@@ -43,7 +43,7 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_empty_facet_fields_returns_empty(self):
         """Empty facet_fields list should return empty dict."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         session = AsyncMock()
         result = await compute_facets([uuid4()], session, [], 20)
@@ -52,14 +52,14 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_tags_facet_computation(self):
         """Test tag facet aggregation."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         # Mock session with tag results
         session = AsyncMock()
         session.execute = AsyncMock()
         
         # Mock query result: 3 tags with counts
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = [
             type('Row', (), {'tag': 'python', 'count': 5})(),
             type('Row', (), {'tag': 'javascript', 'count': 3})(),
@@ -84,14 +84,14 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_category_facet_computation(self):
         """Test category facet aggregation."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         # Mock session with category results
         session = AsyncMock()
         session.execute = AsyncMock()
         
         # Mock query result: 3 categories with counts
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = [
             type('Row', (), {'category': 'tech', 'count': 8})(),
             type('Row', (), {'category': 'business', 'count': 4})(),
@@ -116,20 +116,20 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_multiple_facet_fields(self):
         """Test computation of multiple facet fields."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         # Mock session
         session = AsyncMock()
         session.execute = AsyncMock()
         
         # Mock tag results
-        tag_result = AsyncMock()
+        tag_result = MagicMock()
         tag_result.fetchall.return_value = [
             type('Row', (), {'tag': 'python', 'count': 5})(),
         ]
         
         # Mock category results  
-        category_result = AsyncMock()
+        category_result = MagicMock()
         category_result.fetchall.return_value = [
             type('Row', (), {'category': 'tech', 'count': 3})(),
         ]
@@ -138,9 +138,9 @@ class TestComputeFacets:
         def mock_execute(stmt):
             if "unnest" in str(stmt):
                 return tag_result
-            elif "attributes->>'category'" in str(stmt):
+            elif "->>" in str(stmt):
                 return category_result
-            return AsyncMock()
+            return MagicMock()
         
         session.execute.side_effect = mock_execute
         
@@ -159,13 +159,13 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_top_n_limiting(self):
         """Test top_n parameter limits results."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         # Mock session with 7 tags but limit to 3
         session = AsyncMock()
         session.execute = AsyncMock()
         
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = [
             type('Row', (), {'tag': f'tag{i}', 'count': 10-i})()
             for i in range(7)  # 7 tags
@@ -187,10 +187,16 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_unsupported_field_ignored(self):
         """Test unsupported facet fields are ignored."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         session = AsyncMock()
         session.execute = AsyncMock()
+        
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = [
+            type('Row', (), {'tag': 'python', 'count': 2})(),
+        ]
+        session.execute.return_value = mock_result
         
         doc_ids = [uuid4()]
         result = await compute_facets(doc_ids, session, ["tags", "unsupported.field"], 20)
@@ -202,7 +208,7 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_exception_handling(self):
         """Test that exceptions during facet computation are caught and logged."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         # Mock session that raises exception
         session = AsyncMock()
@@ -217,13 +223,13 @@ class TestComputeFacets:
     @pytest.mark.asyncio
     async def test_no_results_for_field(self):
         """Test fields with no results return empty list for that field."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         # Mock session returning no results for tags
         session = AsyncMock()
         session.execute = AsyncMock()
         
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = []  # No tags found
         session.execute.return_value = mock_result
         
@@ -240,13 +246,13 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_single_document_with_multiple_tags(self):
         """Test single document with multiple tags."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         session = AsyncMock()
         session.execute = AsyncMock()
         
         # Mock result: single document with 3 tags
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = [
             type('Row', (), {'tag': 'python', 'count': 1})(),
             type('Row', (), {'tag': 'web', 'count': 1})(),
@@ -265,13 +271,13 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_duplicate_tags_across_documents(self):
         """Test duplicate tags across multiple documents."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
         
         session = AsyncMock()
         session.execute = AsyncMock()
         
         # Mock result: "python" appears in 3 documents, "javascript" in 2
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = [
             type('Row', (), {'tag': 'python', 'count': 3})(),
             type('Row', (), {'tag': 'javascript', 'count': 2})(),

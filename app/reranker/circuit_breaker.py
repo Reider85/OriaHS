@@ -1,8 +1,12 @@
 """Circuit breaker for reranker service (C-03, ARCHITECT §6.6).
 
 Implements rolling window circuit breaker for RerankerService to prevent
-cascading timeouts when cross-encoder degrades. Opens when error_rate > 5%
+cascading timeouts when cross-encoder degrades. Opens when error_rate >= 5%
 or latency_p95 > 500ms, stays open for 60 seconds, then probes with half-open state.
+
+Note: ``call()`` does not re-raise errors from the wrapped callable - it records
+them in the window and returns the exception instance as the result (see
+``SearchOrchestrator._rerank``, which checks ``isinstance(result, BaseException)``).
 """
 
 import asyncio
@@ -29,7 +33,7 @@ class RerankerCircuitBreaker:
     """Circuit breaker for RerankerService with rolling window and half-open state.
     
     States: closed (normal) → open (rerank disabled) → half_open (probe) → closed.
-    Opens when error_rate > error_rate_threshold or latency_p95 > latency_p95_threshold_ms.
+    Opens when error_rate >= error_rate_threshold or latency_p95 > latency_p95_threshold_ms.
     """
     
     def __init__(self, config: CircuitBreakerConfig) -> None:
@@ -176,9 +180,9 @@ class RerankerCircuitBreaker:
         if not self._window:
             return False
         
-        # Check error rate threshold
+        # Check error rate threshold (>= : 5% ошибок - уже trip level)
         error_rate = self._error_rate()
-        if error_rate > self._config.error_rate_threshold:
+        if error_rate >= self._config.error_rate_threshold:
             return True
         
         # Check latency p95 threshold

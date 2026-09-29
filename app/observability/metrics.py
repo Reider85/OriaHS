@@ -36,9 +36,12 @@ reranker_latency_ms = Histogram(
 
 # ---------------------------------------------------------------------------
 # Fusion strategy usage — filled by SearchOrchestrator after every search (C-12)
+# Имя с _total: prometheus_client сам дописывает _total к экспонируемому имени
+# Counter, поэтому без суффикса Python-имя и метрика в Grafana/Prometheus
+# расходились бы (а любой promql по fusion_strategy_usage не нашёл бы серию).
 # ---------------------------------------------------------------------------
-fusion_strategy_usage = Counter(
-    "fusion_strategy_usage",
+fusion_strategy_usage_total = Counter(
+    "fusion_strategy_usage_total",
     "Total search requests by fusion strategy.",
     labelnames=["strategy"],  # "rrf", "weighted", "rerank", "weighted+rerank"
 )
@@ -176,14 +179,14 @@ search_partial_total = Counter(
 # ---------------------------------------------------------------------------
 # Push-down filter metrics — updated by SearchOrchestrator (C-10)
 # ---------------------------------------------------------------------------
-qdrant_pushdown_rate = Counter(
-    "qdrant_pushdown_rate",
+qdrant_pushdown_rate_total = Counter(
+    "qdrant_pushdown_rate_total",
     "Push-down filter usage decisions.",
     labelnames=["result"],  # "used", "skipped", "too_large", "no_filters", "disabled", "not_selective"
 )
 
 # Legacy alias for backward compatibility
-pushdown_total = qdrant_pushdown_rate
+pushdown_total = qdrant_pushdown_rate_total
 
 pushdown_selectivity = Gauge(
     "pushdown_selectivity",
@@ -214,7 +217,7 @@ __all__ = [
     "reconciler_batch_size",
     "search_latency_ms",
     "reranker_latency_ms",
-    "fusion_strategy_usage",
+    "fusion_strategy_usage_total",
     "circuit_breaker_state",
     "circuit_breaker_opened_total",
     "circuit_breaker_requests_total",
@@ -225,7 +228,7 @@ __all__ = [
     "eval_regression_detected_total",
     "search_degraded_total",
     "search_partial_total",
-    "qdrant_pushdown_rate",
+    "qdrant_pushdown_rate_total",
     "pushdown_selectivity",
     "outbox_throttled_total",
     "outbox_reindex_triggered_total",

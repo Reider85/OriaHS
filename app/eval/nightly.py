@@ -255,14 +255,14 @@ class NightlyEvalJob:
                 # Extract top-10 doc_ids
                 retrieved_doc_ids = [hit.doc_id for hit in response.hits[:10]]
                 
-                # Convert to strings for comparison
-                retrieved_doc_ids = [str(doc_id) for doc_id in retrieved_doc_ids]
-                relevant_doc_ids = query.relevant_doc_ids
+                # Convert to strings for comparison (метрики оперируют str)
+                retrieved_ids = [str(doc_id) for doc_id in retrieved_doc_ids]
+                relevant_ids = set(str(doc_id) for doc_id in query.relevant_doc_ids)
                 
                 # Compute metrics
-                recall_scores.append(recall_at_10(retrieved_doc_ids, set(relevant_doc_ids)))
-                ndcg_scores.append(ndcg_at_10(retrieved_doc_ids, set(relevant_doc_ids)))
-                mrr_scores.append(mrr(retrieved_doc_ids, set(relevant_doc_ids)))
+                recall_scores.append(recall_at_10(retrieved_ids, relevant_ids))
+                ndcg_scores.append(ndcg_at_10(retrieved_ids, relevant_ids))
+                mrr_scores.append(mrr(retrieved_ids, relevant_ids))
                 
             except Exception as e:
                 logger.warning(

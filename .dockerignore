@@ -1,0 +1,36 @@
+# Контекст сборки образа приложения — только то, что нужно в /app.
+.git
+.github
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose*.yml
+
+# Локальное окружение и venv — зависимости ставятся внутри образа.
+.venv
+.env
+.env.*
+!.env.example
+
+# Кэши инструментов
+.mypy_cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+
+# Тесты и артефакты локальной разработки
+tests
+eval/baselines/*.tmp
+grafana
+monitoring
+analitics
+*.md
+!README.md
+
+# Веса/дампы, которые не должны попадать в образ
+*.bin
+*.pt
+*.onnx
+*.safetensors

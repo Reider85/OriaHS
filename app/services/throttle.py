@@ -42,8 +42,15 @@ class OutboxThrottle:
         """
         cache_key = "throttle:pending_count"
         
-        # Try Redis cache first
-        cached_value = await self._redis.get(cache_key)
+        # Try Redis cache first. Redis - ускоритель, а не источник правды:
+        # при падении соединения ронять каждый /index было нельзя (C-11),
+        # поэтому кэш оборачиваем в try/except и всегда падаем в БД.
+        try:
+            cached_value = await self._redis.get(cache_key)
+        except Exception as exc:  # noqa: BLE001 — degrade to DB on any cache error
+            logger.warning("Throttle cache read failed, falling back to DB", extra={"error": str(exc)})
+            cached_value = None
+        
         if cached_value is not None:
             count = int(cached_value)
             metrics.outbox_pending_count.set(count)
@@ -53,8 +60,12 @@ class OutboxThrottle:
         async with self._session_factory() as session:
             count = await count_all_pending(session)
         
-        # Store in Redis with 5s TTL
-        await self._redis.setex(cache_key, 5, count)
+        # Store in Redis with 5s TTL (best effort: кэш, а не критичный путь)
+        try:
+            await self._redis.setex(cache_key, 5, count)
+        except Exception as exc:  # noqa: BLE001 — cache write failure is not fatal
+            logger.warning("Throttle cache write failed", extra={"error": str(exc)})
+        
         metrics.outbox_pending_count.set(count)
         
         return count

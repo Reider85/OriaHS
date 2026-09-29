@@ -11,7 +11,7 @@
         "type": "stat",
         "targets": [
           {
-            "expr": "rate(qdrant_pushdown_rate{result=\"used\"}[5m]) / rate(qdrant_pushdown_rate[5m]) * 100",
+            "expr": "rate(qdrant_pushdown_rate_total{result=\"used\"}[5m]) / rate(qdrant_pushdown_rate_total[5m]) * 100",
             "legendFormat": "Usage rate (%)"
           }
         ],
@@ -77,27 +77,27 @@
         "type": "timeseries",
         "targets": [
           {
-            "expr": "rate(qdrant_pushdown_rate{result=\"used\"}[5m])",
+            "expr": "rate(qdrant_pushdown_rate_total{result=\"used\"}[5m])",
             "legendFormat": "Used"
           },
           {
-            "expr": "rate(qdrant_pushdown_rate{result=\"skipped\"}[5m])",
+            "expr": "rate(qdrant_pushdown_rate_total{result=\"skipped\"}[5m])",
             "legendFormat": "Skipped"
           },
           {
-            "expr": "rate(qdrant_pushdown_rate{result=\"too_large\"}[5m])",
+            "expr": "rate(qdrant_pushdown_rate_total{result=\"too_large\"}[5m])",
             "legendFormat": "Too large"
           },
           {
-            "expr": "rate(qdrant_pushdown_rate{result=\"no_filters\"}[5m])",
+            "expr": "rate(qdrant_pushdown_rate_total{result=\"no_filters\"}[5m])",
             "legendFormat": "No filters"
           },
           {
-            "expr": "rate(qdrant_pushdown_rate{result=\"disabled\"}[5m])",
+            "expr": "rate(qdrant_pushdown_rate_total{result=\"disabled\"}[5m])",
             "legendFormat": "Disabled"
           },
           {
-            "expr": "rate(qdrant_pushdown_rate{result=\"not_selective\"}[5m])",
+            "expr": "rate(qdrant_pushdown_rate_total{result=\"not_selective\"}[5m])",
             "legendFormat": "Not selective"
           }
         ],
@@ -130,7 +130,7 @@
         "type": "stat",
         "targets": [
           {
-            "expr": "rate(qdrant_pushdown_rate{result=\"too_large\"}[5m])",
+            "expr": "rate(qdrant_pushdown_rate_total{result=\"too_large\"}[5m])",
             "legendFormat": "Rejections due to size"
           }
         ],

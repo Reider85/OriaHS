@@ -66,8 +66,9 @@ def ndcg_at_10(retrieved: list[str], relevant: Set[str]) -> float:
             dcg += relevance / math.log2(rank + 1)
     
     # Compute IDCG (perfect ranking: all relevant docs first)
+    # rank 1-based, как в DCG выше: log2(1) == 0 давало бы ZeroDivisionError.
     idcg = 0.0
-    for rank in range(min(len(relevant), 10)):
+    for rank in range(1, min(len(relevant), 10) + 1):
         idcg += 1.0 / math.log2(rank + 1)
     
     if idcg == 0:
