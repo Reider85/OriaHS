@@ -79,6 +79,8 @@ def weighted_fuse(
     def _norm(items: list[tuple[UUID, float]]) -> dict[UUID, float]:
         if not items:
             return {}
+        if len(items) == 1:
+            return {items[0][0]: 1.0}
         scores = [s for _, s in items]
         lo, hi = min(scores), max(scores)
         rng = hi - lo or 1.0

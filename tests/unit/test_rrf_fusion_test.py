@@ -117,9 +117,24 @@ class TestWeightedFuse:
         vec = [_vec(d1, score=0.8)]
         result = weighted_fuse(lex, vec, alpha=0.5)
         assert len(result) == 1
-        # Single item: min==max → rng=1.0 → normalized=0.0 for both channels
-        # Result: 0.5*0.0 + 0.5*0.0 = 0.0
-        assert math.isclose(result[0][1], 0.0, abs_tol=1e-9)
+        # Single item: normalizes to 1.0 in both channels
+        # Result: 0.5*1.0 + 0.5*1.0 = 1.0
+        assert math.isclose(result[0][1], 1.0, abs_tol=1e-9)
+
+    def test_single_element_normalizes_to_one(self) -> None:
+        """Single-element channel normalizes to 1.0 per C-02 acceptance criteria."""
+        d1 = uuid4()
+        # Vector-only: single element normalizes to 1.0, but weighted result is alpha * 0.0 + (1-alpha) * 1.0
+        result1 = weighted_fuse([], [_vec(d1, score=0.9)], alpha=0.5)
+        assert len(result1) == 1
+        assert math.isclose(result1[0][1], 0.5, abs_tol=1e-9)  # 0.5 * 0.0 + 0.5 * 1.0 = 0.5
+        assert result1[0][0] == d1
+
+        # Lexical-only: single element normalizes to 1.0, but weighted result is alpha * 1.0 + (1-alpha) * 0.0
+        result2 = weighted_fuse([_lex(d1, score=0.5)], [], alpha=0.5)
+        assert len(result2) == 1
+        assert math.isclose(result2[0][1], 0.5, abs_tol=1e-9)  # 0.5 * 1.0 + 0.5 * 0.0 = 0.5
+        assert result2[0][0] == d1
 
     def test_alpha_zero_uses_only_vector(self) -> None:
         d1, d2 = uuid4(), uuid4()
@@ -127,7 +142,7 @@ class TestWeightedFuse:
         vec = [_vec(d2, score=0.5)]
         result = weighted_fuse(lex, vec, alpha=0.0)
         # d2 gets full vec weight (normalized to 1.0), d1 gets 0 from lex
-        # But with single items both normalize to 0.0; d2 gets vec weight
+        # With single items both normalize to 1.0; d2 gets vec weight * 1.0
         scores = {doc_id: s for doc_id, s in result}
         assert scores[d2] >= scores[d1]
 
