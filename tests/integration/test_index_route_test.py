@@ -53,10 +53,7 @@ async def test_index_creates_document_and_outbox(wired_app, engine) -> None:
         assert doc_count == 1
         outbox = (
             await conn.execute(
-                text(
-                    "SELECT op, status, content_hash FROM search_outbox "
-                    "WHERE document_id = :id"
-                ),
+                text("SELECT op, status, content_hash FROM search_outbox WHERE document_id = :id"),
                 {"id": doc_id},
             )
         ).all()
@@ -194,3 +191,31 @@ async def test_invalid_body_returns_422(wired_app) -> None:
     _, client = wired_app
     resp = await client.post("/index", json={"tenant_id": "not-a-uuid"})
     assert resp.status_code == 422
+
+
+@pytest.mark.slow
+async def test_index_route_throttle_202(wired_app, engine) -> None:
+    """POST /index with 60k pending returns 202 throttled (B-00)."""
+    _, client = wired_app
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("""
+            INSERT INTO documents (tenant_id, external_ref, title, content,
+                                   language, embedding_model, content_hash)
+            SELECT gen_random_uuid(), 'thr-' || i, '', '', 'en',
+                   'bge-m3-v1', 'hash-' || i
+            FROM generate_series(1, 60000) AS i
+        """)
+        )
+        await conn.execute(
+            text("""
+            INSERT INTO search_outbox (document_id, op, status, next_retry_at)
+            SELECT id, 'upsert', 'pending', now()
+            FROM documents WHERE external_ref LIKE 'thr-%'
+        """)
+        )
+    resp = await client.post("/index", json=_payload(external_ref="thr-post"))
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["status"] == "throttled"
+    assert data["throttled"] is True

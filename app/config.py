@@ -125,7 +125,9 @@ class RerankerConfig(BaseSettings):
 class CircuitBreakerConfig(BaseSettings):
     """Circuit breaker settings for reranker (ARCHITECT §6.6, §17.2)."""
 
-    model_config = SettingsConfigDict(env_prefix="CIRCUIT_BREAKER_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="CIRCUIT_BREAKER_", env_file=".env", extra="ignore"
+    )
 
     error_rate_threshold: float = Field(default=0.05, ge=0.0, le=1.0)
     latency_p95_threshold_ms: int = Field(default=500, ge=1)
@@ -175,6 +177,7 @@ class FeatureFlags(BaseSettings):
     rerank_enabled: bool = True
     weighted_fusion_enabled: bool = True
     pushdown_enabled: bool = True
+    throttle_enabled: bool = True
 
 
 class AppConfig(BaseSettings):

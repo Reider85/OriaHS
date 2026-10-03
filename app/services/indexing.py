@@ -8,7 +8,6 @@ P-08 adds the idempotent ``soft_delete`` path with ``op='delete'``.
 """
 
 import hashlib
-from typing import Optional
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -17,7 +16,7 @@ from langdetect import DetectorFactory, detect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import IndexRequest, IndexResponse
-from app.config import ThrottleConfig
+from app.config import settings
 from app.db.models import Document
 from app.db.queries import documents, outbox
 from app.db.queries.embedding_models import get_default_model
@@ -38,9 +37,7 @@ class IndexingService:
     """Owns the ``POST /index`` transaction + Redis Streams hand-off."""
 
     def __init__(
-        self, 
-        redis_client: aioredis.Redis | None = None,
-        throttle: OutboxThrottle | None = None
+        self, redis_client: aioredis.Redis | None = None, throttle: OutboxThrottle | None = None
     ) -> None:
         self._redis = redis_client
         self._throttle = throttle
@@ -51,9 +48,7 @@ class IndexingService:
         return hashlib.sha256(f"{title}\n{content}".encode()).hexdigest()
 
     @staticmethod
-    def detect_language(
-        title: str, content: str, tenant_default: str | None = None
-    ) -> str:
+    def detect_language(title: str, content: str, tenant_default: str | None = None) -> str:
         """ISO 639-1 language tag; tenant default (else "en") is the fallback."""
         sample = f"{title} {content}".strip()
         if sample:
@@ -124,8 +119,8 @@ class IndexingService:
             # Check throttle status (C-11)
             throttled = False
             status_str = "queued"
-            
-            if self._throttle is not None:
+
+            if self._throttle is not None and settings.feature_flags.throttle_enabled:
                 if await self._throttle.should_throttle():
                     throttled = True
                     status_str = "throttled"

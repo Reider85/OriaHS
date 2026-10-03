@@ -106,6 +106,21 @@ async def wired_app(engine: AsyncEngine, async_redis: aioredis.Redis):
 
     wrapper.dependency_overrides[get_session] = _get_session
     wrapper.dependency_overrides[get_redis_client] = lambda: async_redis
+
+    # Override get_throttle_service to use test infrastructure
+    from app.api.routes import index as index_routes
+    from app.config import settings
+    from app.services.throttle import OutboxThrottle
+
+    def _get_test_throttle() -> OutboxThrottle:
+        return OutboxThrottle(
+            session_factory=factory,
+            redis_client=async_redis,
+            config=settings.throttle,
+        )
+
+    wrapper.dependency_overrides[index_routes.get_throttle_service] = _get_test_throttle
+
     transport = ASGITransport(app=wrapper)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield wrapper, client
