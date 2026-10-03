@@ -1,99 +1,133 @@
-"""E2E test fixtures and utilities for MVP DoD validation (P-17).
+"""E2E test fixtures and utilities for Critical DoD validation (B-02).
 
-Provides fixtures for the full stack (PG + Qdrant + Redis + API) and
-test utilities covering the complete MVP workflow from index to search.
+Provides fixtures for the full stack (PG + Redis + API) with dependency overrides
+and test utilities covering the complete workflow from index to search.
 """
 
 import asyncio
 import hashlib
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+import redis.asyncio as aioredis
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from testcontainers.community.postgres import PostgresContainer
+from testcontainers.community.redis import RedisContainer
 
 from app.config import settings
-from app.db.session import async_session_factory
+from app.db.models import Base
+from app.db.queries.embedding_models import clear_default_model_cache
+from app.db.redis_client import get_redis_client
+from app.db.session import get_session
+
+
+def _to_asyncpg_url(url: str) -> str:
+    from urllib.parse import urlsplit
+    parts = urlsplit(url)
+    host = f"{parts.hostname}:{parts.port}" if parts.port else parts.hostname
+    return f"postgresql+asyncpg://{parts.username}:{parts.password}@{host}{parts.path}"
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+def pg_dsn():
+    """Disposable PostgreSQL 16 (same image as docker-compose)."""
+    with PostgresContainer("postgres:16-alpine") as pg:
+        yield _to_asyncpg_url(pg.get_connection_url())
 
 
 @pytest.fixture(scope="session")
-async def wired_app():
-    """Full stack fixture with PG + Qdrant + Redis + API."""
-    try:
-        from testcontainers.postgres import PostgresContainer
-        from testcontainers.qdrant import QdrantContainer
-        from testcontainers.redis import RedisContainer
+def redis_address():
+    """Disposable Redis 7 (same major version as docker-compose)."""
+    with RedisContainer("redis:7-alpine") as redis_c:
+        host = redis_c.get_container_host_ip()
+        yield host, int(redis_c.get_exposed_port(6379))
 
-        # Start containers
-        pg_container = PostgresContainer("postgres:16-alpine")
-        redis_container = RedisContainer("redis:7-alpine")
-        qdrant_container = QdrantContainer("qdrant/qdrant:v1.10.2")
 
-        with pg_container, redis_container, qdrant_container:
-            # Wait for containers to be ready
-            await asyncio.sleep(5)
-
-            # Configure app for test containers
-            settings.database.url = pg_container.get_connection_url()
-            settings.redis.host = redis_container.get_container_host_ip()
-            settings.redis.port = redis_container.get_exposed_port(6379)
-            settings.qdrant.host = qdrant_container.get_container_host_ip()
-            settings.qdrant.port = qdrant_container.get_exposed_port(6379)
-
-            # Create test client
-            from httpx import AsyncClient
-
-            from app.main import app
-
-            # Create engine and session factory
-            engine = create_async_engine(settings.database.url)
-            async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-            # Create tables
-            async with engine.begin() as conn:
-                await conn.run_sync(settings.db_metadata.create_all)
-
-            async with AsyncClient(app=app, base_url="http://test") as client:
-                yield (engine, client)
-
-            # Clean up
-            await engine.dispose()
-    except Exception as e:
-        # Skip if Docker containers are not available
-        pytest.skip(f"Docker containers not available: {e}")
+async def _seed_embedding_model(engine: AsyncEngine) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        )
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            text("""
+                INSERT INTO embedding_models (name, dimension, description, is_default, is_active)
+                VALUES ('bge-m3-v1', 1024, 'BAAI/bge-m3 multilingual dense embeddings', true, true)
+                ON CONFLICT (name) DO NOTHING
+            """)
+        )
+    clear_default_model_cache()
 
 
 @pytest.fixture
-async def async_redis():
-    """Redis client for testing."""
-    import redis.asyncio as aioredis
-
-    redis_client = aioredis.Redis(
-        host=settings.redis.host,
-        port=settings.redis.port,
-        db=0,
-        decode_responses=True,
-    )
-    yield redis_client
-    await redis_client.close()
+async def engine(pg_dsn: str):
+    """Function-scoped async engine with a fresh schema per test."""
+    engine = create_async_engine(pg_dsn)
+    await _seed_embedding_model(engine)
+    yield engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    clear_default_model_cache()
+    await engine.dispose()
 
 
 @pytest.fixture
-async def engine(wired_app):
-    """Database engine from wired_app fixture."""
-    yield wired_app[0]
+async def async_redis(redis_address):
+    """Async Redis client bound to the disposable container."""
+    host, port = redis_address
+    client = aioredis.Redis(host=host, port=port, decode_responses=False)
+    await client.flushdb()
+    yield client
+    await client.aclose()
+
+
+@pytest.fixture
+async def wired_app(engine: AsyncEngine, async_redis: aioredis.Redis):
+    """FastAPI app wired to the test PG + Redis via dependency overrides.
+
+    Returns (wrapper, client) so individual tests can re-override
+    dependencies (e.g. to simulate unavailable services).
+    """
+    from app.main import create_app
+
+    wrapper = create_app()
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+    async def _get_session() -> AsyncSession:
+        async with factory() as session:
+            yield session
+
+    wrapper.dependency_overrides[get_session] = _get_session
+    wrapper.dependency_overrides[get_redis_client] = lambda: async_redis
+
+    # Override get_throttle_service to use test infrastructure
+    from app.api.routes import index as index_routes
+    from app.services.throttle import OutboxThrottle
+
+    def _get_test_throttle() -> OutboxThrottle:
+        return OutboxThrottle(
+            session_factory=factory,
+            redis_client=async_redis,
+            config=settings.throttle,
+        )
+
+    wrapper.dependency_overrides[index_routes.get_throttle_service] = _get_test_throttle
+
+    transport = ASGITransport(app=wrapper)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield wrapper, client
+    wrapper.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -161,15 +195,15 @@ class E2ETestClient:
 
 
 @asynccontextmanager
-async def reconcile_wait(max_seconds: int = 60):
+async def reconcile_wait(max_seconds: int = 60, session_factory=None):
     """Context manager to wait for reconciler to process outbox."""
     from app.db.queries.outbox import count_pending
 
     start_time = time.time()
-    session_factory = async_session_factory
+    test_session_factory = session_factory
 
     while time.time() - start_time < max_seconds:
-        async with session_factory() as session:
+        async with test_session_factory() as session:
             pending_count = await count_pending(session)
             if pending_count == 0:
                 yield
@@ -237,9 +271,9 @@ def validate_dod_criteria_6(first_response: dict, second_response: dict):
 # ===== CRITICAL PHASE FIXTURES AND UTILITIES =====
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(autouse=True)
 async def truncate_critical_tables(engine):
-    """Truncate critical tables between E2E tests to prevent cross-test pollution."""
+    """Truncate critical tables between tests to prevent cross-test pollution."""
     yield  # Test runs here
 
     # Clean up after test
@@ -301,24 +335,48 @@ async def reranker_service_mock_override(wired_app):
     return reranker_service_mock
 
 
-async def poll_until(predicate: Callable[[], bool], timeout: int = 60, interval: int = 2) -> None:
+async def poll_until(predicate: Callable[[], bool | Awaitable[bool]], timeout: int = 60, interval: int = 2) -> None:
     """Poll until predicate returns True or timeout is reached.
 
     Replaces time.sleep loops with proper async polling.
 
     Args:
-        predicate: Function that returns True when condition is met
+        predicate: Function that returns True when condition is met (can be async)
         timeout: Maximum time to wait in seconds
         interval: Polling interval in seconds
     """
     start_time = time.time()
 
     while time.time() - start_time < timeout:
-        if predicate():
+        result = predicate()
+        if asyncio.iscoroutine(result):
+            if await result:
+                return
+        elif result:
             return
         await asyncio.sleep(interval)
 
     raise TimeoutError(f"Polling did not complete within {timeout} seconds")
+
+
+async def mark_outbox_status(engine: AsyncEngine, token: str, status: str) -> None:
+    """Manually update outbox status for testing wait_for_index functionality.
+    
+    Args:
+        engine: Database engine
+        token: Document ID UUID string
+        status: New status ('done', 'dead', 'failed')
+    """
+    doc_id = UUID(token)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("""
+                UPDATE search_outbox 
+                SET status = :status, updated_at = now() 
+                WHERE document_id = :doc_id
+            """),
+            {"doc_id": doc_id, "status": status}
+        )
 
 
 def inject_reranker_errors(reranker_service, error_rate: float = 0.05):
