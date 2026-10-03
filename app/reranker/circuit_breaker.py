@@ -50,7 +50,7 @@ class RerankerCircuitBreaker:
         )  # (timestamp_ms, latency_ms, success)
         self._lock = asyncio.Lock()
 
-    async def call(self, fn: Callable[..., Any], *args, **kwargs) -> Any:
+    async def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Wrap function call with circuit breaker logic.
 
         Parameters
@@ -70,7 +70,12 @@ class RerankerCircuitBreaker:
         CircuitBreakerOpen
             When circuit breaker is open (early return without calling fn).
         """
-        # Update metrics for current state
+        # Lazy cooldown check (B-01 / C-03): open → half_open after cooldown
+        # without manual _check_and_transition. Runs before the open-guard so
+        # auto-recovery is reachable from the public API.
+        await self._check_and_transition()
+
+        # Update metrics for current state (after possible transition)
         circuit_breaker_state.labels(component="reranker").set(self._state_value())
 
         if self._state == "open":
@@ -127,6 +132,9 @@ class RerankerCircuitBreaker:
                     circuit_breaker_opened_total.labels(
                         component="reranker", reason="latency"
                     ).inc()
+
+        # Reflect final state in metrics (B-01: open(2) → half_open(1) → closed(0))
+        circuit_breaker_state.labels(component="reranker").set(self._state_value())
 
         return result
 

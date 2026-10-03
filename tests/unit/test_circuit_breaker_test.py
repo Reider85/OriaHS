@@ -109,6 +109,33 @@ class TestRerankerCircuitBreaker:
         assert result == "probe_success"
         assert breaker.state() == "closed"  # successful probe should close
 
+    async def test_breaker_auto_recovers_after_cooldown(self) -> None:
+        """Test that call() auto-recovers open → half_open after cooldown (B-01 / C-03).
+
+        Unlike test_half_open_state_probes_one_call, this test does NOT call
+        _check_and_transition() manually after sleep — the transition must be
+        triggered lazily inside call() itself.
+        """
+        config = CircuitBreakerConfig(cooldown_seconds=0.1)
+        breaker = RerankerCircuitBreaker(config)
+
+        # Force open state
+        for _ in range(11):
+            await breaker._record_call(time.time() * 1000, 0, False)
+        await breaker._check_and_transition()
+        assert breaker.is_open()
+
+        # Wait for cooldown to elapse
+        await asyncio.sleep(0.2)
+
+        # call() must auto-transition open → half_open and invoke fn (probe)
+        async def mock_fn():
+            return "probe_success"
+
+        result = await breaker.call(mock_fn)
+        assert result == "probe_success"
+        assert breaker.state() == "closed"  # successful probe closes the breaker
+
     async def test_half_open_failure_reopens_breaker(self) -> None:
         """Test that half_open failure reopens breaker and resets cooldown."""
         config = CircuitBreakerConfig(cooldown_seconds=0.1)
