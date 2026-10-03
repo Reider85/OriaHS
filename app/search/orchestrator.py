@@ -175,8 +175,7 @@ class SearchOrchestrator:
         if self._qdrant_health_check and self._flags.vector_search_enabled:
             try:
                 is_healthy = await asyncio.wait_for(
-                    self._qdrant.get_collection_info("documents"),
-                    timeout=0.1
+                    self._qdrant.get_collection_info("documents"), timeout=0.1
                 )
                 if not is_healthy:
                     logger.warning("Qdrant health check failed, using lexical only")
@@ -221,7 +220,7 @@ class SearchOrchestrator:
         # Compute facets on the top-K results if requested
         facets = {}
         if req.facets and ranked:
-            doc_ids = [doc_id for doc_id, _, _, _ in ranked[:req.top_k]]
+            doc_ids = [doc_id for doc_id, _, _, _ in ranked[: req.top_k]]
             try:
                 facets = await compute_facets(
                     doc_ids=doc_ids,
@@ -230,12 +229,14 @@ class SearchOrchestrator:
                     top_n=req.facet_top_n,
                 )
             except Exception as exc:
-                logger.warning("Facets computation failed, returning empty", extra={"error": str(exc)})
+                logger.warning(
+                    "Facets computation failed, returning empty", extra={"error": str(exc)}
+                )
 
         latency_ms = int((time.monotonic() - start) * 1000)
-        metrics.search_latency_ms.labels(
-            tenant_id=str(req.tenant_id), fusion=req.fusion
-        ).observe(latency_ms)
+        metrics.search_latency_ms.labels(tenant_id=str(req.tenant_id), fusion=req.fusion).observe(
+            latency_ms
+        )
 
         return SearchResponse(
             hits=hits,
@@ -266,7 +267,10 @@ class SearchOrchestrator:
         if self._flags.pushdown_enabled:
             redis = get_redis_client()
             decision = await maybe_pushdown(
-                self._session, redis, req.tenant_id, req.filters,
+                self._session,
+                redis,
+                req.tenant_id,
+                req.filters,
             )
             metrics.pushdown_selectivity.set(
                 decision.selectivity if decision.selectivity is not None else 1.0,
@@ -317,7 +321,10 @@ class SearchOrchestrator:
                 outcome.rerank_degraded = True
                 logger.warning(
                     "Rerank requested but unavailable, serving fusion-only",
-                    extra={"rerank_enabled": self._flags.rerank_enabled, "service_injected": self._reranker is not None},
+                    extra={
+                        "rerank_enabled": self._flags.rerank_enabled,
+                        "service_injected": self._reranker is not None,
+                    },
                 )
             return outcome
 
@@ -325,10 +332,16 @@ class SearchOrchestrator:
             # Early return: RerankerService must not be called at all.
             outcome = await self._collect_channels(lex_task, vec_task, deadline)
             outcome.rerank_degraded = True
-            logger.warning("Circuit breaker open, skipping rerank", extra={"state": self._breaker.state()})
+            logger.warning(
+                "Circuit breaker open, skipping rerank", extra={"state": self._breaker.state()}
+            )
             return outcome
 
-        if self._reranker_config.speculative_enabled and self._speculative is not None and vec_task is not None:
+        if (
+            self._reranker_config.speculative_enabled
+            and self._speculative is not None
+            and vec_task is not None
+        ):
             return await self._run_speculative(req, lex_task, vec_task, deadline)
 
         outcome = await self._collect_channels(lex_task, vec_task, deadline)
@@ -366,7 +379,9 @@ class SearchOrchestrator:
 
         if pending:
             outcome.partial = True
-            logger.warning("Search deadline exceeded, cancelling stragglers", extra={"pending": len(pending)})
+            logger.warning(
+                "Search deadline exceeded, cancelling stragglers", extra={"pending": len(pending)}
+            )
             metrics.search_partial_total.inc()
 
         for task in pending:
@@ -378,7 +393,9 @@ class SearchOrchestrator:
 
         return outcome
 
-    def _absorb(self, outcome: _ChannelOutcome, task: asyncio.Task[Any], *, is_vector: bool) -> None:
+    def _absorb(
+        self, outcome: _ChannelOutcome, task: asyncio.Task[Any], *, is_vector: bool
+    ) -> None:
         """Fold one finished channel task into ``outcome``."""
         try:
             result = task.result()
@@ -450,11 +467,15 @@ class SearchOrchestrator:
             outcome.rerank_degraded = True
         except (RerankerTimeoutException, RerankerUnavailableException) as exc:
             outcome.rerank_degraded = True
-            logger.warning("Speculative rerank failed, serving fusion-only", extra={"error": str(exc)})
+            logger.warning(
+                "Speculative rerank failed, serving fusion-only", extra={"error": str(exc)}
+            )
         except Exception as exc:
             # A rerank failure must never take the read path down with it.
             outcome.rerank_degraded = True
-            logger.warning("Speculative rerank raised, serving fusion-only", extra={"error": str(exc)})
+            logger.warning(
+                "Speculative rerank raised, serving fusion-only", extra={"error": str(exc)}
+            )
 
         # The runner gathers both tasks, so both are settled by now. If it
         # raised before gathering, fall back to collecting them normally
@@ -629,7 +650,14 @@ class SearchOrchestrator:
         self,
         lex_hits: list[LexicalHit],
         vec_hits: list[VectorHit],
-    ) -> tuple[dict[UUID, str], dict[UUID, str], dict[UUID, float], dict[UUID, float], dict[UUID, int], dict[UUID, int]]:
+    ) -> tuple[
+        dict[UUID, str],
+        dict[UUID, str],
+        dict[UUID, float],
+        dict[UUID, float],
+        dict[UUID, int],
+        dict[UUID, int],
+    ]:
         """Index channel results for O(1) per-hit assembly.
 
         Building the rank/score lookups up front keeps the hit loop linear
@@ -660,7 +688,14 @@ class SearchOrchestrator:
         self,
         req: SearchRequest,
         ranked: list[tuple[UUID, float, float, float | None]],
-        meta: tuple[dict[UUID, str], dict[UUID, str], dict[UUID, float], dict[UUID, float], dict[UUID, int], dict[UUID, int]],
+        meta: tuple[
+            dict[UUID, str],
+            dict[UUID, str],
+            dict[UUID, float],
+            dict[UUID, float],
+            dict[UUID, int],
+            dict[UUID, int],
+        ],
         rerank_applied: bool,
         rerank_degraded: bool,
     ) -> list[SearchHit]:

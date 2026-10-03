@@ -44,9 +44,7 @@ class VectorHit(BaseModel):
     source: Literal["vector"] = "vector"
 
 
-def build_qdrant_filter(
-    tenant_id: UUID, filters: SearchFilters, model_name: str
-) -> qmodels.Filter:
+def build_qdrant_filter(tenant_id: UUID, filters: SearchFilters, model_name: str) -> qmodels.Filter:
     """Convert ``SearchFilters`` + tenant isolation into a Qdrant ``Filter``.
 
     Mandatory ``must`` conditions (ARCHITECT §8.6, §5.7): tenant isolation
@@ -54,25 +52,17 @@ def build_qdrant_filter(
     never leak into the result set.
     """
     must: list[qmodels.Condition] = [
-        qmodels.FieldCondition(
-            key="tenant_id", match=qmodels.MatchValue(value=str(tenant_id))
-        ),
-        qmodels.FieldCondition(
-            key="model_name", match=qmodels.MatchValue(value=model_name)
-        ),
+        qmodels.FieldCondition(key="tenant_id", match=qmodels.MatchValue(value=str(tenant_id))),
+        qmodels.FieldCondition(key="model_name", match=qmodels.MatchValue(value=model_name)),
     ]
 
     if filters.language:
         must.append(
-            qmodels.FieldCondition(
-                key="language", match=qmodels.MatchAny(any=filters.language)
-            )
+            qmodels.FieldCondition(key="language", match=qmodels.MatchAny(any=filters.language))
         )
     if filters.tags_any:
         must.append(
-            qmodels.FieldCondition(
-                key="tags", match=qmodels.MatchAny(any=filters.tags_any)
-            )
+            qmodels.FieldCondition(key="tags", match=qmodels.MatchAny(any=filters.tags_any))
         )
 
     attrs = filters.attributes or {}
@@ -104,9 +94,7 @@ def build_qdrant_filter(
     return qmodels.Filter(must=must)
 
 
-async def _load_titles(
-    session: AsyncSession, doc_ids: list[UUID]
-) -> dict[UUID, tuple[str, str]]:
+async def _load_titles(session: AsyncSession, doc_ids: list[UUID]) -> dict[UUID, tuple[str, str]]:
     """Batch-load ``(title, snippet)`` for a set of doc_ids from Postgres.
 
     Only live documents are returned; soft-deleted rows are dropped so the
@@ -114,14 +102,11 @@ async def _load_titles(
     """
     if not doc_ids:
         return {}
-    stmt = (
-        select(
-            Document.id,
-            Document.title,
-            func.left(Document.content, SNIPPET_LENGTH).label("content_snippet"),
-        )
-        .where(Document.id.in_(doc_ids), Document.deleted_at.is_(None))
-    )
+    stmt = select(
+        Document.id,
+        Document.title,
+        func.left(Document.content, SNIPPET_LENGTH).label("content_snippet"),
+    ).where(Document.id.in_(doc_ids), Document.deleted_at.is_(None))
     rows = (await session.execute(stmt)).all()
     return {row.id: (row.title, row.content_snippet) for row in rows}
 
@@ -196,15 +181,13 @@ async def vector_search(
             )
             if attempt < max_retries:
                 # Exponential backoff for retry
-                delay = SEARCH_TIMEOUT_SECONDS * (2 ** attempt)
+                delay = SEARCH_TIMEOUT_SECONDS * (2**attempt)
                 await asyncio.sleep(delay)
                 continue
             raise last_error from None
         except qdrant_exceptions.ApiException as exc:
             status = getattr(exc, "status_code", None)
-            raise QdrantUnavailableError(
-                f"Qdrant unavailable (status={status}): {exc}"
-            ) from exc
+            raise QdrantUnavailableError(f"Qdrant unavailable (status={status}): {exc}") from exc
         except Exception as exc:  # aiohttp connection errors etc.
             raise QdrantUnavailableError(f"Qdrant unavailable: {exc}") from exc
 

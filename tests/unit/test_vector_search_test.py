@@ -69,35 +69,25 @@ def test_build_qdrant_filter_tenant_isolation() -> None:
     assert "tenant_id" in keys
     assert "model_name" in keys
     tenant_cond = next(
-        c
-        for c in qfilter.must
-        if isinstance(c, qmodels.FieldCondition) and c.key == "tenant_id"
+        c for c in qfilter.must if isinstance(c, qmodels.FieldCondition) and c.key == "tenant_id"
     )
     assert tenant_cond.match == qmodels.MatchValue(value=str(tenant))
 
 
 def test_build_qdrant_filter_language() -> None:
     tenant = uuid.uuid4()
-    qfilter = build_qdrant_filter(
-        tenant, SearchFilters(language=["ru"]), DEFAULT_MODEL_NAME
-    )
+    qfilter = build_qdrant_filter(tenant, SearchFilters(language=["ru"]), DEFAULT_MODEL_NAME)
     cond = next(
-        c
-        for c in qfilter.must
-        if isinstance(c, qmodels.FieldCondition) and c.key == "language"
+        c for c in qfilter.must if isinstance(c, qmodels.FieldCondition) and c.key == "language"
     )
     assert cond.match == qmodels.MatchAny(any=["ru"])
 
 
 def test_build_qdrant_filter_tags() -> None:
     tenant = uuid.uuid4()
-    qfilter = build_qdrant_filter(
-        tenant, SearchFilters(tags_any=["news"]), DEFAULT_MODEL_NAME
-    )
+    qfilter = build_qdrant_filter(tenant, SearchFilters(tags_any=["news"]), DEFAULT_MODEL_NAME)
     cond = next(
-        c
-        for c in qfilter.must
-        if isinstance(c, qmodels.FieldCondition) and c.key == "tags"
+        c for c in qfilter.must if isinstance(c, qmodels.FieldCondition) and c.key == "tags"
     )
     assert cond.match == qmodels.MatchAny(any=["news"])
 
@@ -120,13 +110,9 @@ def test_build_qdrant_filter_attributes() -> None:
 def test_build_qdrant_filter_created_after() -> None:
     tenant = uuid.uuid4()
     since = datetime.now(UTC)
-    qfilter = build_qdrant_filter(
-        tenant, SearchFilters(created_after=since), DEFAULT_MODEL_NAME
-    )
+    qfilter = build_qdrant_filter(tenant, SearchFilters(created_after=since), DEFAULT_MODEL_NAME)
     cond = next(
-        c
-        for c in qfilter.must
-        if isinstance(c, qmodels.FieldCondition) and c.key == "created_at"
+        c for c in qfilter.must if isinstance(c, qmodels.FieldCondition) and c.key == "created_at"
     )
     assert cond.range == qmodels.DatetimeRange(gte=since)
 
@@ -141,17 +127,13 @@ async def test_returns_vector_hits_with_titles() -> None:
     tenant = uuid.uuid4()
     doc_id = str(uuid.uuid4())
     client = MagicMock()
-    client.search = AsyncMock(
-        return_value=[_scored_point(doc_id, 0.9, str(tenant))]
-    )
+    client.search = AsyncMock(return_value=[_scored_point(doc_id, 0.9, str(tenant))])
 
     cache = MagicMock(spec=EmbeddingCache)
     cache.get_query_embedding = AsyncMock(return_value=await _hit_vector())
 
     service = MagicMock(spec=EmbeddingService)
-    session = _fake_session(
-        {doc_id: {"title": "Matched", "snippet": "leading content..."}}
-    )
+    session = _fake_session({doc_id: {"title": "Matched", "snippet": "leading content..."}})
 
     hits = await vector_search(
         session=session,

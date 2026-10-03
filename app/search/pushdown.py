@@ -119,9 +119,7 @@ async def _estimate_selectivity(
     clauses, params = _build_pushdown_where(tenant_id, filters)
     where_sql = " AND ".join(clauses)
 
-    explain_sql = (
-        f"EXPLAIN (FORMAT JSON) SELECT id FROM documents WHERE {where_sql} LIMIT 5000"
-    )
+    explain_sql = f"EXPLAIN (FORMAT JSON) SELECT id FROM documents WHERE {where_sql} LIMIT 5000"
 
     result = await session.execute(text(explain_sql), params)
     row = result.fetchone()
@@ -152,9 +150,7 @@ async def _fetch_filtered_doc_ids(
     where_sql = " AND ".join(clauses)
     params["limit"] = limit
 
-    stmt = text(
-        f"SELECT id FROM documents WHERE {where_sql} LIMIT :limit"
-    )
+    stmt = text(f"SELECT id FROM documents WHERE {where_sql} LIMIT :limit")
 
     result = await session.execute(stmt, params)
     return [row[0] for row in result.fetchall()]

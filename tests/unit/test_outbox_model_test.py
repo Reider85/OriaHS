@@ -58,8 +58,6 @@ async def test_invalid_op_rejected(session, doc) -> None:
 
 @pytest.mark.slow
 async def test_invalid_status_rejected(session, doc) -> None:
-    session.add(
-        OutboxItem(document_id=doc.id, op="upsert", status="invalid_status")
-    )
+    session.add(OutboxItem(document_id=doc.id, op="upsert", status="invalid_status"))
     with pytest.raises(IntegrityError):
         await session.flush()

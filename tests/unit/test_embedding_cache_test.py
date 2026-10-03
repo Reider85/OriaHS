@@ -76,9 +76,7 @@ class TestRoundtrip:
         v1, v2 = make_vector(1), make_vector(2)
         await cache.set_by_content_hash("h1", MODEL, v1)
         await cache.set_by_content_hash("h2", MODEL, v2)
-        result = await cache.mget_by_content_hash(
-            [("h1", MODEL), ("h2", MODEL), ("h3", MODEL)]
-        )
+        result = await cache.mget_by_content_hash([("h1", MODEL), ("h2", MODEL), ("h3", MODEL)])
         assert result[0] is not None
         assert result[1] is not None
         assert result[2] is None
@@ -90,16 +88,12 @@ class TestRoundtrip:
 
 
 class TestTtl:
-    async def test_content_hash_ttl(
-        self, redis: FakeRedis, cache: EmbeddingCache
-    ) -> None:
+    async def test_content_hash_ttl(self, redis: FakeRedis, cache: EmbeddingCache) -> None:
         await cache.set_by_content_hash("h1", MODEL, make_vector(1))
         ttl = await redis.ttl(f"hash:h1:{MODEL}")
         assert ttl == pytest.approx(CONTENT_HASH_TTL_SECONDS, abs=5)
 
-    async def test_query_ttl(
-        self, redis: FakeRedis, cache: EmbeddingCache
-    ) -> None:
+    async def test_query_ttl(self, redis: FakeRedis, cache: EmbeddingCache) -> None:
         await cache.set_query_embedding("query text", MODEL, make_vector(2))
         key = f"qemb:{MODEL}:{sha256_hex('query text')}"
         ttl = await redis.ttl(key)
@@ -107,23 +101,17 @@ class TestTtl:
 
 
 class TestKeys:
-    async def test_content_hash_key_format(
-        self, redis: FakeRedis, cache: EmbeddingCache
-    ) -> None:
+    async def test_content_hash_key_format(self, redis: FakeRedis, cache: EmbeddingCache) -> None:
         await cache.set_by_content_hash("deadbeef", MODEL, make_vector(1))
         keys = [key.decode() for key in await redis.keys("hash:*")]
         assert keys == [f"hash:deadbeef:{MODEL}"]
 
-    async def test_query_key_format(
-        self, redis: FakeRedis, cache: EmbeddingCache
-    ) -> None:
+    async def test_query_key_format(self, redis: FakeRedis, cache: EmbeddingCache) -> None:
         await cache.set_query_embedding("hello", MODEL, make_vector(1))
         keys = [key.decode() for key in await redis.keys("qemb:*")]
         assert keys == [f"qemb:{MODEL}:{sha256_hex('hello')}"]
 
-    async def test_model_name_part_of_key(
-        self, redis: FakeRedis, cache: EmbeddingCache
-    ) -> None:
+    async def test_model_name_part_of_key(self, redis: FakeRedis, cache: EmbeddingCache) -> None:
         await cache.set_by_content_hash("h1", "model-a", make_vector(1))
         assert await cache.get_by_content_hash("h1", "model-b") is None
         keys = [key.decode() for key in await redis.keys("hash:*")]

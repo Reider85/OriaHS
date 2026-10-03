@@ -25,9 +25,7 @@ class TestEmbedTexts:
 
     async def test_l2_normalized(self, service: EmbeddingService) -> None:
         result = await service.embed_texts(["hello"])
-        np.testing.assert_allclose(
-            np.linalg.norm(result, axis=1), 1.0, atol=1e-5
-        )
+        np.testing.assert_allclose(np.linalg.norm(result, axis=1), 1.0, atol=1e-5)
 
     async def test_deterministic(self, service: EmbeddingService) -> None:
         a = await service.embed_texts(["test sentence"])
@@ -76,6 +74,4 @@ class TestConfig:
             result = await service.embed_texts(["test"])
         assert result.shape == (1, EXPECTED_DIMENSION)
         assert service._device == "cpu"  # noqa: SLF001
-        assert any(
-            "CUDA not available" in r.message for r in caplog.records
-        )
+        assert any("CUDA not available" in r.message for r in caplog.records)

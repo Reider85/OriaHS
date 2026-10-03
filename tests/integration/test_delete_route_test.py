@@ -47,10 +47,7 @@ async def test_delete_soft_deletes_document_and_outbox(wired_app, engine) -> Non
         )
         outbox = (
             await conn.execute(
-                text(
-                    "SELECT op, status, content_hash FROM search_outbox "
-                    "WHERE document_id = :id"
-                ),
+                text("SELECT op, status, content_hash FROM search_outbox WHERE document_id = :id"),
                 {"id": doc_id},
             )
         ).all()

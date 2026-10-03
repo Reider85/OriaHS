@@ -43,9 +43,7 @@ async def test_second_active_default_rejected(session) -> None:
     _add_default(session)
     await session.commit()
 
-    session.add(
-        EmbeddingModel(name="evil-v2", dimension=1024, is_default=True, is_active=True)
-    )
+    session.add(EmbeddingModel(name="evil-v2", dimension=1024, is_default=True, is_active=True))
     with pytest.raises(Exception, match="one_default_idx"):
         await session.commit()
 

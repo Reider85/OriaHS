@@ -58,9 +58,7 @@ class EmbeddingCache:
         digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
         return f"qemb:{model_name}:{digest}"
 
-    async def get_by_content_hash(
-        self, content_hash: str, model_name: str
-    ) -> np.ndarray | None:
+    async def get_by_content_hash(self, content_hash: str, model_name: str) -> np.ndarray | None:
         metrics.embedding_cache_requests_total.inc()
         raw = await self._redis.get(self._content_hash_key(content_hash, model_name))
         if raw is None:
@@ -78,9 +76,7 @@ class EmbeddingCache:
             ex=CONTENT_HASH_TTL_SECONDS,
         )
 
-    async def mget_by_content_hash(
-        self, items: list[tuple[str, str]]
-    ) -> list[np.ndarray | None]:
+    async def mget_by_content_hash(self, items: list[tuple[str, str]]) -> list[np.ndarray | None]:
         """Batch lookup; one round-trip. Returns ``None`` for cache misses."""
         if not items:
             return []
@@ -107,9 +103,7 @@ class EmbeddingCache:
         assert isinstance(raw, bytes)
         return _deserialize(raw)
 
-    async def set_query_embedding(
-        self, query: str, model_name: str, vector: np.ndarray
-    ) -> None:
+    async def set_query_embedding(self, query: str, model_name: str, vector: np.ndarray) -> None:
         await self._redis.set(
             self._query_key(query, model_name),
             _serialize(vector),
@@ -125,12 +119,8 @@ class EmbeddingCache:
         """cache-lookup → compute (misses only) → cache-store, in one batch."""
         if not texts:
             return []
-        hashes = [
-            hashlib.sha256(text.encode("utf-8")).hexdigest() for text in texts
-        ]
-        cached = await self.mget_by_content_hash(
-            [(hash_, model_name) for hash_ in hashes]
-        )
+        hashes = [hashlib.sha256(text.encode("utf-8")).hexdigest() for text in texts]
+        cached = await self.mget_by_content_hash([(hash_, model_name) for hash_ in hashes])
         results: list[np.ndarray | None] = list(cached)
         missing_idx = [i for i, value in enumerate(results) if value is None]
         if missing_idx:
@@ -140,8 +130,7 @@ class EmbeddingCache:
                 computed = computed.reshape(1, -1)
             if computed.shape[0] != len(missing_idx):
                 raise ValueError(
-                    "compute_fn returned "
-                    f"{computed.shape[0]} vectors for {len(missing_idx)} texts"
+                    f"compute_fn returned {computed.shape[0]} vectors for {len(missing_idx)} texts"
                 )
             async with self._redis.pipeline(transaction=False) as pipe:
                 for j, index in enumerate(missing_idx):

@@ -20,9 +20,7 @@ async def test_search_empty_database(wired_app) -> None:
         "tenant_id": str(uuid.uuid4()),
         "top_k": 10,
     }
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post("/search", json=body)
     assert resp.status_code == 200
     data = resp.json()
@@ -58,9 +56,7 @@ async def test_search_returns_lexical_results(wired_app, engine) -> None:
         "tenant_id": tenant_id,
         "top_k": 10,
     }
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         search_resp = await client.post("/search", json=search_body)
     assert search_resp.status_code == 200
     data = search_resp.json()
@@ -99,9 +95,7 @@ async def test_search_tenant_isolation(wired_app, engine) -> None:
     )
 
     # Search as tenant A
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post(
             "/search",
             json={"query": "Secret document", "tenant_id": tenant_a, "top_k": 10},
@@ -140,9 +134,7 @@ async def test_search_filters_language(wired_app, engine) -> None:
     )
 
     # Search with language filter for English only
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post(
             "/search",
             json={
@@ -165,9 +157,7 @@ async def test_search_response_structure(wired_app) -> None:
         "query": "test",
         "tenant_id": str(uuid.uuid4()),
     }
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post("/search", json=body)
     assert resp.status_code == 200
     data = resp.json()
@@ -218,9 +208,7 @@ async def test_search_explain_mode(wired_app, engine) -> None:
         },
     )
 
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post(
             "/search",
             json={

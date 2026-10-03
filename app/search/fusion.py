@@ -90,8 +90,5 @@ def weighted_fuse(
     n_vec = _norm(vec_pairs)
 
     all_ids = set(n_lex) | set(n_vec)
-    fused = [
-        (d, alpha * n_lex.get(d, 0.0) + (1 - alpha) * n_vec.get(d, 0.0))
-        for d in all_ids
-    ]
+    fused = [(d, alpha * n_lex.get(d, 0.0) + (1 - alpha) * n_vec.get(d, 0.0)) for d in all_ids]
     return sorted(fused, key=lambda x: -x[1])

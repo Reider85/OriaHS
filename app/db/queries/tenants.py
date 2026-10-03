@@ -34,11 +34,7 @@ async def get_tenant_doc_count(
 
     # Fast path: pg_class.reltuples estimate
     result = await session.execute(
-        text(
-            "SELECT reltuples::bigint AS est "
-            "FROM pg_class "
-            "WHERE relname = 'documents'"
-        )
+        text("SELECT reltuples::bigint AS est FROM pg_class WHERE relname = 'documents'")
     )
     row = result.fetchone()
     est = int(row[0]) if row and row[0] else 0
@@ -50,10 +46,7 @@ async def get_tenant_doc_count(
     # Fallback: exact count (only when reltuples is stale / zero)
     await session.execute(text("SET LOCAL statement_timeout = '100ms'"))
     count_result = await session.execute(
-        text(
-            "SELECT count(*) FROM documents "
-            "WHERE tenant_id = :tid AND deleted_at IS NULL"
-        ),
+        text("SELECT count(*) FROM documents WHERE tenant_id = :tid AND deleted_at IS NULL"),
         {"tid": str(tenant_id)},
     )
     count = int(count_result.scalar() or 0)

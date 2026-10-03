@@ -1,7 +1,7 @@
 """Pydantic models for cross-encoder reranking (C-01)."""
 
-from typing import Optional
 from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict
 
 

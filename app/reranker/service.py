@@ -8,7 +8,6 @@ async inference, and FastAPI DI integration. Latency target: ~5ms/pair on GPU,
 import asyncio
 import logging
 import time
-from typing import Optional
 
 import numpy as np
 import torch
@@ -33,7 +32,7 @@ class RerankerService:
 
     def __init__(self, config: RerankerConfig) -> None:
         self._config = config
-        self._model: Optional[FlagReranker] = None
+        self._model: FlagReranker | None = None
         self._load_lock = asyncio.Lock()
         self._device: str = "cpu"  # fallback, updated in lazy_load
 
@@ -45,7 +44,7 @@ class RerankerService:
         await self._lazy_load()
 
     async def rerank(
-        self, query: str, docs: list[RerankCandidate], top_k: Optional[int] = None
+        self, query: str, docs: list[RerankCandidate], top_k: int | None = None
     ) -> list[RerankResult]:
         """Rerank documents using cross-encoder (ARCHITECT §7.3).
 
@@ -118,7 +117,7 @@ class RerankerService:
             results = results[:top_k]
 
         # Log performance metrics and record latency metric
-        inference_ms = int((time.time() - start_time) * 1000) if 'start_time' in locals() else 0
+        inference_ms = int((time.time() - start_time) * 1000) if "start_time" in locals() else 0
         logger.info(
             "Rerank done",
             extra={
@@ -128,11 +127,10 @@ class RerankerService:
                 "inference_ms": inference_ms,
             },
         )
-        
+
         # Record latency metric (C-12)
         metrics.reranker_latency_ms.labels(
-            device=self._device, 
-            mock=self._config.mock_mode
+            device=self._device, mock=self._config.mock_mode
         ).observe(inference_ms)
 
         return results
@@ -162,7 +160,7 @@ class RerankerService:
                 )
 
                 # Validate model dimension (should match embedding_models.dimension in future)
-                load_ms = int((time.time() - start_time) * 1000) if 'start_time' in locals() else 0
+                load_ms = int((time.time() - start_time) * 1000) if "start_time" in locals() else 0
                 if hasattr(self._model, "get_sentence_embedding_dimension"):
                     model_dim = self._model.get_sentence_embedding_dimension()
                     logger.info(
@@ -189,7 +187,7 @@ class RerankerService:
                     f"Failed to load reranker model '{self._config.model_name}': {exc}"
                 ) from exc
 
-    def _mock_rerank(self, docs: list[RerankCandidate], top_k: Optional[int]) -> list[RerankResult]:
+    def _mock_rerank(self, docs: list[RerankCandidate], top_k: int | None) -> list[RerankResult]:
         """Mock reranking for development without GPU.
 
         Returns uniform scores (1.0, 0.9, 0.8, ...) or preserves input scores.
@@ -200,7 +198,6 @@ class RerankerService:
         # Return uniform scores by rank (1.0, 0.9, 0.8, ...)
         # Alternatively, could preserve input scores: RerankResult(doc_id=doc.doc_id, score=doc.score)
         results = [
-            RerankResult(doc_id=doc.doc_id, score=1.0 - (i * 0.1))
-            for i, doc in enumerate(docs)
+            RerankResult(doc_id=doc.doc_id, score=1.0 - (i * 0.1)) for i, doc in enumerate(docs)
         ]
         return results

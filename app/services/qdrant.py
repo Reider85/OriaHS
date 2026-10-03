@@ -67,15 +67,12 @@ class QdrantService:
 
     async def check_health(self) -> bool:
         """Check Qdrant connectivity and collection availability.
-        
+
         Returns True if Qdrant is responsive and collection exists, False otherwise.
         Uses 100ms timeout to avoid blocking search requests.
         """
         try:
-            await asyncio.wait_for(
-                self._client.get_collection_info(self._collection),
-                timeout=0.1
-            )
+            await asyncio.wait_for(self._client.get_collection_info(self._collection), timeout=0.1)
             return True
         except Exception:
             return False

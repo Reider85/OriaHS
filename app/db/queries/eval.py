@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.eval_dataset import EvalDataset
@@ -18,19 +18,17 @@ async def register_dataset(
     query_count: int,
 ) -> EvalDataset:
     """Register or get existing dataset (upsert by name+version).
-    
+
     Returns the existing EvalDataset if already registered, otherwise creates a new one.
     """
     # Check if dataset with same name+version already exists
-    stmt = select(EvalDataset).where(
-        EvalDataset.name == name, EvalDataset.version == version
-    )
+    stmt = select(EvalDataset).where(EvalDataset.name == name, EvalDataset.version == version)
     result = await session.execute(stmt)
     existing = result.scalar_one_or_none()
-    
+
     if existing:
         return existing
-    
+
     # Create new dataset
     dataset = EvalDataset(
         name=name,
@@ -70,14 +68,16 @@ async def save_result(
     return result
 
 
-async def get_baseline(
-    session: AsyncSession, dataset_id: str, strategy: str
-) -> EvalResult | None:
+async def get_baseline(session: AsyncSession, dataset_id: str, strategy: str) -> EvalResult | None:
     """Get the latest result for dataset+strategy (baseline for regression detection)."""
-    stmt = select(EvalResult).where(
-        EvalResult.dataset_id == dataset_id,
-        EvalResult.strategy == strategy,
-    ).order_by(EvalResult.run_at.desc())
+    stmt = (
+        select(EvalResult)
+        .where(
+            EvalResult.dataset_id == dataset_id,
+            EvalResult.strategy == strategy,
+        )
+        .order_by(EvalResult.run_at.desc())
+    )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
@@ -86,9 +86,12 @@ async def get_results_by_dataset(
     session: AsyncSession, dataset_id: str, limit: int = 100
 ) -> list[EvalResult]:
     """Get all results for a dataset, ordered by most recent first."""
-    stmt = select(EvalResult).where(
-        EvalResult.dataset_id == dataset_id
-    ).order_by(EvalResult.run_at.desc()).limit(limit)
+    stmt = (
+        select(EvalResult)
+        .where(EvalResult.dataset_id == dataset_id)
+        .order_by(EvalResult.run_at.desc())
+        .limit(limit)
+    )
     result = await session.execute(stmt)
     return result.scalars().all()
 
@@ -102,7 +105,7 @@ async def get_latest_run_timestamp(session: AsyncSession) -> datetime | None:
 
 __all__ = [
     "register_dataset",
-    "save_result", 
+    "save_result",
     "get_baseline",
     "get_results_by_dataset",
     "get_latest_run_timestamp",

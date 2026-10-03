@@ -28,9 +28,7 @@ class PendingOutboxRow(NamedTuple):
     content_hash: str | None
 
 
-async def add_upsert(
-    session: AsyncSession, document_id: UUID, content_hash: str | None
-) -> None:
+async def add_upsert(session: AsyncSession, document_id: UUID, content_hash: str | None) -> None:
     """Enqueue an ``upsert`` outbox row for a document (inside a transaction)."""
     session.add(
         OutboxItem(
@@ -59,18 +57,14 @@ async def has_pending(session: AsyncSession) -> bool:
     pay for the ``FOR UPDATE SKIP LOCKED`` scan. Idempotent, no locks.
     """
     result = await session.execute(
-        text(
-            f"SELECT EXISTS (SELECT 1 FROM search_outbox WHERE {_PENDING_FILTER})"
-        )
+        text(f"SELECT EXISTS (SELECT 1 FROM search_outbox WHERE {_PENDING_FILTER})")
     )
     exists = result.scalar_one()
     assert isinstance(exists, bool)
     return exists
 
 
-async def claim_pending(
-    session: AsyncSession, batch_size: int
-) -> list[PendingOutboxRow]:
+async def claim_pending(session: AsyncSession, batch_size: int) -> list[PendingOutboxRow]:
     """Claim at most ``batch_size`` rows for processing (ARCHITECT §4.4).
 
     ``FOR UPDATE SKIP LOCKED`` safely parallelizes multiple reconciler
@@ -170,8 +164,8 @@ async def count_pending(session: AsyncSession) -> int:
 
 async def count_all_pending(session: AsyncSession) -> int:
     """Count pending/failed/in_progress rows due within next minute (C-11).
-    
-    Matches the prompt SQL: includes 'in_progress' status and filters by 
+
+    Matches the prompt SQL: includes 'in_progress' status and filters by
     next_retry_at <= now() + 1 minute. Used for adaptive throttle decisions.
     """
     result = await session.execute(
@@ -204,9 +198,7 @@ async def index_lag_seconds(session: AsyncSession) -> float:
 
 async def count_dead(session: AsyncSession) -> int:
     """Count ``dead`` rows for the ``dead_letter_count`` gauge (P-15)."""
-    result = await session.execute(
-        text("SELECT count(*) FROM search_outbox WHERE status = 'dead'")
-    )
+    result = await session.execute(text("SELECT count(*) FROM search_outbox WHERE status = 'dead'"))
     return int(result.scalar_one() or 0)
 
 

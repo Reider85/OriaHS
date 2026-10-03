@@ -20,7 +20,7 @@ from sqlalchemy import Float, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.document import Document
-from app.search.exceptions import DeadlockError, StatementTimeoutError
+from app.search.exceptions import DeadlockError
 from app.search.filters import SearchFilters
 
 SNIPPET_LENGTH = 200
@@ -52,16 +52,16 @@ async def lexical_search(
 
     ``statement_timeout`` is applied per-transaction and surfaces as a
     ``QueryCanceledError`` (asyncpg) if the query exceeds the budget.
-    
+
     Implements deadlock retry with exponential backoff (C-09).
     """
     await session.execute(text(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT_MS}ms'"))
-    
+
     # Deadlock retry logic
     max_retries = 2
     base_delay_ms = 50
     last_error = None
-    
+
     for attempt in range(max_retries + 1):
         try:
             tsq = func.plainto_tsquery("simple", query)
@@ -123,16 +123,18 @@ async def lexical_search(
                     content_snippet=row.content_snippet,
                 )
                 for row in rows
-]
-            
+            ]
+
         except asyncpg.exceptions.DeadlockDetectedError as exc:
-            last_error = DeadlockError(f"PG deadlock detected, retry {attempt + 1}/{max_retries}: {exc}")
+            last_error = DeadlockError(
+                f"PG deadlock detected, retry {attempt + 1}/{max_retries}: {exc}"
+            )
             if attempt < max_retries:
-                delay = base_delay_ms * (2 ** attempt) / 1000.0  # Exponential backoff
+                delay = base_delay_ms * (2**attempt) / 1000.0  # Exponential backoff
                 await asyncio.sleep(delay)
                 continue
             raise last_error
-            
+
         except Exception as exc:
             # Re-raise non-deadlock errors immediately
             raise exc

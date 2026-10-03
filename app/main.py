@@ -9,6 +9,7 @@ for automatic ``request_id`` / ``trace_id`` context propagation.
 """
 
 import logging
+
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
@@ -28,7 +29,7 @@ async def lifespan(app: FastAPI):
         reranker = RerankerService(config=settings.reranker)
         await reranker.warmup()
         logger.info("Reranker warmup complete.")
-    
+
     yield
 
 
@@ -49,9 +50,9 @@ def create_app() -> FastAPI:
     app.include_router(index.router)
     app.include_router(search.router)
 
-    Instrumentator(
-        excluded_handlers=["/health", settings.observability.metrics_path]
-    ).instrument(app).expose(
+    Instrumentator(excluded_handlers=["/health", settings.observability.metrics_path]).instrument(
+        app
+    ).expose(
         app,
         endpoint=settings.observability.metrics_path,
     )

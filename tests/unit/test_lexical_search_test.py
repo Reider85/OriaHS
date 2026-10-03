@@ -77,7 +77,13 @@ async def test_returns_matching_hits_with_snippet(session: AsyncSession) -> None
 @pytest.mark.slow
 async def test_respects_k_limit(session: AsyncSession) -> None:
     tenant = uuid.uuid4()
-    await _seed(session, [_seed_row(tenant_id=tenant, title=f"Doc {i}", content="alpha beta matching words") for i in range(5)])
+    await _seed(
+        session,
+        [
+            _seed_row(tenant_id=tenant, title=f"Doc {i}", content="alpha beta matching words")
+            for i in range(5)
+        ],
+    )
 
     hits = await lexical_search(session, "alpha beta", tenant, SearchFilters(), k=2)
     assert len(hits) == 2
@@ -111,14 +117,16 @@ async def test_language_filter(session: AsyncSession) -> None:
     await _seed(
         session,
         [
-            _seed_row(tenant_id=tenant, title="Rus", content="привет мир общий текст", language="ru"),
-            _seed_row(tenant_id=tenant, title="Eng", content="привет hello world text", language="en"),
+            _seed_row(
+                tenant_id=tenant, title="Rus", content="привет мир общий текст", language="ru"
+            ),
+            _seed_row(
+                tenant_id=tenant, title="Eng", content="привет hello world text", language="en"
+            ),
         ],
     )
 
-    hits = await lexical_search(
-        session, "привет", tenant, SearchFilters(language=["ru"])
-    )
+    hits = await lexical_search(session, "привет", tenant, SearchFilters(language=["ru"]))
     assert len(hits) == 1
     assert hits[0].title == "Rus"
 
@@ -130,9 +138,7 @@ async def test_tags_any_filter(session: AsyncSession) -> None:
     sports = _seed_row(tenant_id=tenant, title="Sports", content="game result", tags=["sports"])
     await _seed(session, [news, sports])
 
-    hits = await lexical_search(
-        session, "news", tenant, SearchFilters(tags_any=["news"])
-    )
+    hits = await lexical_search(session, "news", tenant, SearchFilters(tags_any=["news"]))
     assert [h.doc_id for h in hits] == [news.id]
 
 

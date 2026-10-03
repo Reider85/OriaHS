@@ -68,9 +68,7 @@ async def qdrant_service(
     await qdrant_client_conn.delete_collection(COLLECTION, timeout=30)
     await qdrant_client_conn.create_collection(
         collection_name=COLLECTION,
-        vectors_config=qmodels.VectorParams(
-            size=DIMENSION, distance=qmodels.Distance.COSINE
-        ),
+        vectors_config=qmodels.VectorParams(size=DIMENSION, distance=qmodels.Distance.COSINE),
         timeout=30,
     )
     service = QdrantService(client=qdrant_client_conn, collection_name=COLLECTION)
@@ -179,7 +177,9 @@ def _content_hash(title: str, content: str) -> str:
 
 @pytest.mark.slow  # PG + Qdrant + Redis testcontainers
 async def test_worker_syncs_upsert_to_qdrant(
-    engine: AsyncEngine, async_redis: aioredis.Redis, qdrant_service: QdrantService,
+    engine: AsyncEngine,
+    async_redis: aioredis.Redis,
+    qdrant_service: QdrantService,
     qdrant_client_conn: AsyncQdrantClient,
 ) -> None:
     doc_id = uuid4()
@@ -202,9 +202,7 @@ async def test_worker_syncs_upsert_to_qdrant(
     assert payload["tenant_id"] == str(tenant_id)
     assert payload["content_hash"] == ch
     assert payload["model_name"] == "bge-m3-v1"
-    vector = cast(
-        "list[float]", points[0].vector
-    )  # dense vector stored here (test data)
+    vector = cast("list[float]", points[0].vector)  # dense vector stored here (test data)
     assert len(vector) == DIMENSION
     assert np.allclose(vector, _EMBED_VECTOR)
 
@@ -323,7 +321,8 @@ async def test_qdrant_failure_marks_failed_with_backoff(
 
 @pytest.mark.slow
 async def test_qdrant_failure_marks_dead_after_max_attempts(
-    engine: AsyncEngine, async_redis: aioredis.Redis,
+    engine: AsyncEngine,
+    async_redis: aioredis.Redis,
 ) -> None:
     """TRIZ-gate: after 20 failed attempts the row goes ``dead`` (not retried)."""
     from prometheus_client import REGISTRY
@@ -331,9 +330,7 @@ async def test_qdrant_failure_marks_dead_after_max_attempts(
     doc_id = uuid4()
     tenant_id = uuid4()
     ch = _content_hash("Title", "Body")
-    await _seed_upsert(
-        engine, doc_id, tenant_id, ch, attempts=ReconcilerConfig().max_attempts - 1
-    )
+    await _seed_upsert(engine, doc_id, tenant_id, ch, attempts=ReconcilerConfig().max_attempts - 1)
 
     dead_client = AsyncQdrantClient(url="http://127.0.0.1:1")
     service = QdrantService(client=dead_client, collection_name=COLLECTION)
@@ -352,7 +349,9 @@ async def test_qdrant_failure_marks_dead_after_max_attempts(
 
 @pytest.mark.slow
 async def test_in_progress_rows_are_not_claimed(
-    engine: AsyncEngine, async_redis: aioredis.Redis, qdrant_service: QdrantService,
+    engine: AsyncEngine,
+    async_redis: aioredis.Redis,
+    qdrant_service: QdrantService,
 ) -> None:
     """``in_progress`` rows stay out of the pending scan (ARCHITECT §4.4)."""
     doc_id = uuid4()

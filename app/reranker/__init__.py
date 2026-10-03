@@ -7,7 +7,7 @@ from app.reranker.service import RerankerService
 
 __all__ = [
     "RerankerService",
-    "RerankCandidate", 
+    "RerankCandidate",
     "RerankResult",
     "RerankerTimeoutException",
     "RerankerUnavailableException",

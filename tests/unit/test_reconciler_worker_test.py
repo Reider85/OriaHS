@@ -143,9 +143,7 @@ async def test_process_single_upsert_embeds_and_upserts(monkeypatch: pytest.Monk
     cache.get_by_content_hash.return_value = None
     embedding = AsyncMock()
     embedding.embed_texts.return_value = _vector()
-    worker, _ = _build_worker(
-        session=session, qdrant=qdrant, embedding=embedding, cache=cache
-    )
+    worker, _ = _build_worker(session=session, qdrant=qdrant, embedding=embedding, cache=cache)
     mark_done = AsyncMock()
     monkeypatch.setattr(outbox_mod, "mark_done", mark_done)
     row = _row(content_hash="doc-hash")
@@ -173,9 +171,7 @@ async def test_process_single_reuses_cached_embedding() -> None:
     cache.get_by_content_hash.return_value = _vector(1)[0]
     embedding = AsyncMock()
     embedding.embed_texts.side_effect = AssertionError("model must not run on cache hit")
-    worker, _ = _build_worker(
-        session=session, qdrant=qdrant, embedding=embedding, cache=cache
-    )
+    worker, _ = _build_worker(session=session, qdrant=qdrant, embedding=embedding, cache=cache)
 
     await worker._process_single(session, _row(content_hash="doc-hash"))
 
@@ -216,9 +212,7 @@ async def test_fastpath_does_not_skip_when_hashes_differ() -> None:
     cache.get_by_content_hash.return_value = None
     embedding = AsyncMock()
     embedding.embed_texts.return_value = _vector()
-    worker, _ = _build_worker(
-        session=session, qdrant=qdrant, embedding=embedding, cache=cache
-    )
+    worker, _ = _build_worker(session=session, qdrant=qdrant, embedding=embedding, cache=cache)
 
     await worker._process_single(session, _row(content_hash="new-hash"))
 
@@ -245,7 +239,9 @@ async def test_process_single_delete_removes_point(monkeypatch: pytest.MonkeyPat
 # --- failure + backoff + dead ----------------------------------------------
 
 
-async def test_failure_marks_failed_with_exponential_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_failure_marks_failed_with_exponential_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     doc = _document(content_hash="doc-hash")
     session = AsyncMock(spec=AsyncSession)
     session.get = AsyncMock(return_value=doc)
@@ -333,12 +329,8 @@ async def test_run_forever_exits_on_stop(monkeypatch: pytest.MonkeyPatch) -> Non
         session_factory=lambda: _SessionCtx(session),
         qdrant_service=None,
     )
-    monkeypatch.setattr(
-        outbox_mod, "has_pending", AsyncMock(return_value=False)
-    )
-    monkeypatch.setattr(
-        outbox_mod, "index_lag_seconds", AsyncMock(return_value=0.0)
-    )
+    monkeypatch.setattr(outbox_mod, "has_pending", AsyncMock(return_value=False))
+    monkeypatch.setattr(outbox_mod, "index_lag_seconds", AsyncMock(return_value=0.0))
 
     task = asyncio.create_task(worker.run_forever())
     await asyncio.sleep(0.05)

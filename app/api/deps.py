@@ -53,4 +53,6 @@ def get_circuit_breaker() -> RerankerCircuitBreaker:
 @lru_cache
 def get_speculative_reranker() -> SpeculativeReranker:
     """Get cached SpeculativeReranker instance (singleton)."""
-    return SpeculativeReranker(get_reranker_service(), get_circuit_breaker(), get_settings().reranker)
+    return SpeculativeReranker(
+        get_reranker_service(), get_circuit_breaker(), get_settings().reranker
+    )

@@ -21,20 +21,12 @@ from typing import Any
 
 import structlog
 
-request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "request_id", default=""
-)
-tenant_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "tenant_id", default=""
-)
-trace_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "trace_id", default=""
-)
+request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="")
+tenant_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("tenant_id", default="")
+trace_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar("trace_id", default="")
 
 
-def _json_renderer(
-    logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
-) -> str:
+def _json_renderer(logger: Any, method_name: str, event_dict: MutableMapping[str, Any]) -> str:
     """Render the event dict as a single-line JSON string."""
     event_dict["timestamp"] = datetime.now(UTC).isoformat()
     event_dict["level"] = method_name.upper()

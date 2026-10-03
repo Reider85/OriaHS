@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, Text, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.models.base import Base
@@ -19,11 +19,15 @@ class EvalResult(Base):
     dataset_id: Mapped[UUID] = mapped_column(
         ForeignKey("eval_datasets.id", ondelete="CASCADE"), nullable=False
     )
-    strategy: Mapped[str] = mapped_column(Text(), nullable=False)  # 'rrf', 'weighted', 'weighted+rerank'
+    strategy: Mapped[str] = mapped_column(
+        Text(), nullable=False
+    )  # 'rrf', 'weighted', 'weighted+rerank'
     recall_at_10: Mapped[float] = mapped_column(Float(), nullable=False)
     ndcg_at_10: Mapped[float] = mapped_column(Float(), nullable=False)
     mrr: Mapped[float] = mapped_column(Float(), nullable=False)
-    run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    run_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     git_sha: Mapped[str | None] = mapped_column(Text(), nullable=True)
     extra: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default="{}")
 

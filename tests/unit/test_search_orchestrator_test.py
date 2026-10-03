@@ -96,9 +96,7 @@ class TestSearchOrchestrator:
     @pytest.mark.asyncio
     @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
     @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
-    async def test_both_channels_return_results(
-        self, mock_lex, mock_vec, orchestrator, config
-    ):
+    async def test_both_channels_return_results(self, mock_lex, mock_vec, orchestrator, config):
         d1, d2, d3 = uuid4(), uuid4(), uuid4()
         mock_lex.return_value = [_lex_hit(d1), _lex_hit(d2, score=0.8)]
         mock_vec.return_value = [_vec_hit(d1, score=0.95), _vec_hit(d3, score=0.7)]
@@ -117,9 +115,7 @@ class TestSearchOrchestrator:
     @pytest.mark.asyncio
     @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
     @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
-    async def test_qdrant_timeout_degraded_mode(
-        self, mock_lex, mock_vec, orchestrator
-    ):
+    async def test_qdrant_timeout_degraded_mode(self, mock_lex, mock_vec, orchestrator):
         d1 = uuid4()
         mock_lex.return_value = [_lex_hit(d1)]
         mock_vec.side_effect = QdrantTimeoutError("timeout")
@@ -136,9 +132,7 @@ class TestSearchOrchestrator:
     @pytest.mark.asyncio
     @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
     @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
-    async def test_qdrant_unavailable_degraded_mode(
-        self, mock_lex, mock_vec, orchestrator
-    ):
+    async def test_qdrant_unavailable_degraded_mode(self, mock_lex, mock_vec, orchestrator):
         d1 = uuid4()
         mock_lex.return_value = [_lex_hit(d1)]
         mock_vec.side_effect = QdrantUnavailableError("unavailable")
@@ -184,9 +178,7 @@ class TestSearchOrchestrator:
     @pytest.mark.asyncio
     @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
     @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
-    async def test_explain_mode_adds_debug_info(
-        self, mock_lex, mock_vec, orchestrator
-    ):
+    async def test_explain_mode_adds_debug_info(self, mock_lex, mock_vec, orchestrator):
         d1 = uuid4()
         mock_lex.return_value = [_lex_hit(d1, score=1.5)]
         mock_vec.return_value = [_vec_hit(d1, score=0.9)]
@@ -206,9 +198,7 @@ class TestSearchOrchestrator:
     @pytest.mark.asyncio
     @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
     @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
-    async def test_latency_ms_in_response(
-        self, mock_lex, mock_vec, orchestrator
-    ):
+    async def test_latency_ms_in_response(self, mock_lex, mock_vec, orchestrator):
         mock_lex.return_value = []
         mock_vec.return_value = []
 
@@ -234,9 +224,7 @@ class TestSearchOrchestrator:
     @pytest.mark.asyncio
     @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
     @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
-    async def test_dedup_same_doc_in_both_channels(
-        self, mock_lex, mock_vec, orchestrator
-    ):
+    async def test_dedup_same_doc_in_both_channels(self, mock_lex, mock_vec, orchestrator):
         d1 = uuid4()
         mock_lex.return_value = [_lex_hit(d1)]
         mock_vec.return_value = [_vec_hit(d1)]
@@ -394,9 +382,9 @@ class TestRerankIntegration:
         breaker._state = "open"
         reranker = MockRerankerService()
 
-        resp = await _orchestrator_with(
-            reranker=reranker, breaker=breaker
-        ).search(_make_request(rerank=True, explain=True))
+        resp = await _orchestrator_with(reranker=reranker, breaker=breaker).search(
+            _make_request(rerank=True, explain=True)
+        )
 
         assert reranker.calls == [], "reranker must not be called while breaker is open"
         assert len(resp.hits) == 1
@@ -415,9 +403,7 @@ class TestRerankIntegration:
         mock_lex.return_value = [_lex_hit(d1)]
         mock_vec.return_value = [_vec_hit(d1)]
         breaker = RerankerCircuitBreaker(CircuitBreakerConfig())
-        orchestrator = _orchestrator_with(
-            reranker=MockRerankerService(fail=True), breaker=breaker
-        )
+        orchestrator = _orchestrator_with(reranker=MockRerankerService(fail=True), breaker=breaker)
 
         first = await orchestrator.search(_make_request(rerank=True, explain=True))
         assert breaker.is_open() is True

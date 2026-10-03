@@ -41,7 +41,9 @@ class StubReranker:
         self.calls.append([d.doc_id for d in docs])
         if self._fail:
             raise RerankerUnavailableException("cross-encoder unavailable")
-        results = [RerankResult(doc_id=d.doc_id, score=self._scores.get(d.doc_id, 0.5)) for d in docs]
+        results = [
+            RerankResult(doc_id=d.doc_id, score=self._scores.get(d.doc_id, 0.5)) for d in docs
+        ]
         results.sort(key=lambda r: -r.score)
         return results[:top_k] if top_k is not None else results
 
@@ -101,9 +103,7 @@ async def test_search_rrf_without_rerank_is_unchanged(wired_app) -> None:
     reranker = StubReranker()
     _install_rerank(wrapper, reranker)
 
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post(
             "/search",
             json={
@@ -130,9 +130,7 @@ async def test_search_weighted_fusion_reports_strategy(wired_app) -> None:
 
     _install_rerank(wrapper, StubReranker())
 
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post(
             "/search",
             json={
@@ -164,9 +162,7 @@ async def test_search_with_rerank_applies_cross_encoder(wired_app) -> None:
     reranker = StubReranker()
     _install_rerank(wrapper, reranker)
 
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post(
             "/search",
             json={
@@ -196,9 +192,7 @@ async def test_search_circuit_breaker_open_returns_200(wired_app) -> None:
     reranker = StubReranker()
     _install_rerank(wrapper, reranker, breaker=StubBreaker(is_open=True))
 
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post(
             "/search",
             json={
@@ -230,9 +224,7 @@ async def test_search_weighted_plus_rerank_combined(wired_app) -> None:
     reranker = StubReranker()
     _install_rerank(wrapper, reranker)
 
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post(
             "/search",
             json={
@@ -269,9 +261,7 @@ async def test_breaker_opened_by_errors_then_degrades(wired_app) -> None:
 
     body = {"query": "Error budget", "tenant_id": tenant_id, "rerank": True, "explain": True}
 
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         first = await client.post("/search", json=body)
 
     assert first.status_code == 200
@@ -280,9 +270,7 @@ async def test_breaker_opened_by_errors_then_degrades(wired_app) -> None:
 
     # A healthy reranker now, but the breaker is open → degraded, still 200.
     _install_rerank(wrapper, StubReranker(), breaker=breaker)
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         second = await client.post("/search", json=body)
 
     assert second.status_code == 200
@@ -298,9 +286,7 @@ async def test_ten_consecutive_rerank_requests_are_stable(wired_app) -> None:
     reranker = StubReranker()
     _install_rerank(wrapper, reranker)
 
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         for _ in range(10):
             resp = await client.post(
                 "/search",
@@ -323,9 +309,7 @@ async def test_response_exposes_partial_flag(wired_app) -> None:
     wrapper, client = wired_app
     _install_rerank(wrapper, StubReranker())
 
-    with patch(
-        "app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]
-    ):
+    with patch("app.search.orchestrator.vector_search", new_callable=AsyncMock, return_value=[]):
         resp = await client.post(
             "/search",
             json={"query": "anything", "tenant_id": str(uuid.uuid4())},

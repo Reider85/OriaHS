@@ -182,7 +182,9 @@ search_partial_total = Counter(
 qdrant_pushdown_rate_total = Counter(
     "qdrant_pushdown_rate_total",
     "Push-down filter usage decisions.",
-    labelnames=["result"],  # "used", "skipped", "too_large", "no_filters", "disabled", "not_selective"
+    labelnames=[
+        "result"
+    ],  # "used", "skipped", "too_large", "no_filters", "disabled", "not_selective"
 )
 
 # Legacy alias for backward compatibility

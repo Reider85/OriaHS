@@ -11,8 +11,8 @@ from uuid import UUID
 
 from app.config import RerankerConfig
 from app.reranker.circuit_breaker import RerankerCircuitBreaker
-from app.reranker.service import RerankerService
 from app.reranker.schemas import RerankCandidate, RerankResult
+from app.reranker.service import RerankerService
 from app.search.exceptions import QdrantTimeoutError, QdrantUnavailableError
 from app.search.lexical import LexicalHit
 from app.search.vector import VectorHit
@@ -32,7 +32,12 @@ class SpeculativeReranker:
     - Degraded: circuit breaker open → skip rerank entirely
     """
 
-    def __init__(self, reranker_service: RerankerService, circuit_breaker: RerankerCircuitBreaker, config: RerankerConfig) -> None:
+    def __init__(
+        self,
+        reranker_service: RerankerService,
+        circuit_breaker: RerankerCircuitBreaker,
+        config: RerankerConfig,
+    ) -> None:
         self._reranker = reranker_service
         self._circuit_breaker = circuit_breaker
         self._config = config
@@ -85,16 +90,17 @@ class SpeculativeReranker:
             if not hits:
                 return  # no speculative input, and no fusion rerank is wanted
 
-            candidates = self._build_candidates_from_lexical(
-                hits[: self._config.speculative_top_n]
-            )
+            candidates = self._build_candidates_from_lexical(hits[: self._config.speculative_top_n])
             if not candidates:
                 return
 
-            logger.info("Speculative rerank: lexical finished first", extra={
-                "speculative_count": len(candidates),
-                "total_lexical": len(hits),
-            })
+            logger.info(
+                "Speculative rerank: lexical finished first",
+                extra={
+                    "speculative_count": len(candidates),
+                    "total_lexical": len(hits),
+                },
+            )
             spec_task = asyncio.ensure_future(self._rerank_candidates(query, candidates))
 
         if not self._circuit_breaker.is_open():
@@ -134,8 +140,10 @@ class SpeculativeReranker:
 
         # Lexical channel failed: rerank the full fusion (vector) results
         if lex_error is not None:
-            logger.warning("Lexical search failed, reranking vector results only",
-                           extra={"error": str(lex_error)})
+            logger.warning(
+                "Lexical search failed, reranking vector results only",
+                extra={"error": str(lex_error)},
+            )
             return await self._fallback_rerank(query, [], vec_hits)
 
         # Empty lexical results: nothing to speculate on and no fusion rerank wanted
@@ -172,10 +180,13 @@ class SpeculativeReranker:
         vec_hits: list[VectorHit],
     ) -> tuple[list[VectorHit], list[RerankResult]]:
         """Fallback rerank: rerank full fusion top-50 after both tasks complete."""
-        logger.info("Fallback rerank: vector finished first", extra={
-            "total_lexical": len(lex_hits),
-            "total_vector": len(vec_hits),
-        })
+        logger.info(
+            "Fallback rerank: vector finished first",
+            extra={
+                "total_lexical": len(lex_hits),
+                "total_vector": len(vec_hits),
+            },
+        )
 
         # Build rerank candidates from fusion results (lex + vec)
         fusion_candidates = self._build_candidates_from_fusion(lex_hits, vec_hits)
@@ -184,11 +195,16 @@ class SpeculativeReranker:
 
         # Run rerank on full fusion results
         rerank_results = await self._reranker.rerank(query, fusion_candidates)
-        
-        logger.info("Fallback rerank completed", extra={
-            "rerank_count": len(rerank_results),
-            "total_rerank_ms": getattr(rerank_results[0], '_inference_ms', 0) if rerank_results else 0,
-        })
+
+        logger.info(
+            "Fallback rerank completed",
+            extra={
+                "rerank_count": len(rerank_results),
+                "total_rerank_ms": getattr(rerank_results[0], "_inference_ms", 0)
+                if rerank_results
+                else 0,
+            },
+        )
 
         return vec_hits, rerank_results
 
@@ -196,18 +212,16 @@ class SpeculativeReranker:
         """Build rerank candidates from lexical search results."""
         if not lex_hits:
             return []
-        
+
         candidates = []
         for hit in lex_hits:
             text = f"{hit.title}\n{hit.content_snippet}"
-            candidates.append(RerankCandidate(
-                doc_id=hit.doc_id,
-                text=text,
-                score=hit.score
-            ))
+            candidates.append(RerankCandidate(doc_id=hit.doc_id, text=text, score=hit.score))
         return candidates
 
-    def _build_candidates_from_fusion(self, lex_hits: list[LexicalHit], vec_hits: list[VectorHit]) -> list[RerankCandidate]:
+    def _build_candidates_from_fusion(
+        self, lex_hits: list[LexicalHit], vec_hits: list[VectorHit]
+    ) -> list[RerankCandidate]:
         """Build rerank candidates from fusion results (lex + vec top-50)."""
         # Deduplicate by doc_id and take top-50. A doc appearing in both channels
         # is reranked once, keeping the lexical score (it is already fused upstream).
@@ -218,11 +232,13 @@ class SpeculativeReranker:
             if hit.doc_id in doc_ids:
                 return
             doc_ids.add(hit.doc_id)
-            candidates.append(RerankCandidate(
-                doc_id=hit.doc_id,
-                text=f"{hit.title}\n{hit.content_snippet}",
-                score=hit.score,
-            ))
+            candidates.append(
+                RerankCandidate(
+                    doc_id=hit.doc_id,
+                    text=f"{hit.title}\n{hit.content_snippet}",
+                    score=hit.score,
+                )
+            )
 
         for lex_hit in lex_hits:
             add(lex_hit)

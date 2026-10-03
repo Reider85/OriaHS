@@ -9,9 +9,10 @@ from pydantic import BaseModel, Field
 
 class EvalQuery(BaseModel):
     """A single evaluation query with relevance judgments.
-    
+
     Matches the JSONL format in eval/datasets/baseline_v1.jsonl.
     """
+
     query_id: str = Field(..., description="Unique identifier for the query")
     query: str = Field(..., description="The search query text")
     tenant_id: str = Field(..., description="Tenant ID for the query")
@@ -21,13 +22,13 @@ class EvalQuery(BaseModel):
 
 def load_dataset(path: str) -> list[EvalQuery]:
     """Load evaluation dataset from JSONL file.
-    
+
     Args:
         path: Path to JSONL file where each line is a JSON object
-        
+
     Returns:
         List of EvalQuery objects
-        
+
     Raises:
         FileNotFoundError: If the path doesn't exist
         json.JSONDecodeError: If any line is invalid JSON
@@ -36,31 +37,31 @@ def load_dataset(path: str) -> list[EvalQuery]:
     dataset_path = Path(path)
     if not dataset_path.exists():
         raise FileNotFoundError(f"Eval dataset not found: {path}")
-    
+
     queries: list[EvalQuery] = []
-    
-    with open(dataset_path, "r", encoding="utf-8") as f:
+
+    with open(dataset_path, encoding="utf-8") as f:
         for line_num, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue  # Skip empty lines
-                
+
             try:
                 data = json.loads(line)
                 query = EvalQuery(**data)
                 queries.append(query)
             except (json.JSONDecodeError, ValueError) as e:
                 raise ValueError(f"Invalid JSON on line {line_num} in {path}: {e}")
-    
+
     return queries
 
 
 def validate_dataset(queries: list[EvalQuery]) -> None:
     """Validate that all queries have required data.
-    
+
     Args:
         queries: List of EvalQuery objects to validate
-        
+
     Raises:
         ValueError: If any query is invalid
     """
@@ -80,10 +81,10 @@ def validate_dataset(queries: list[EvalQuery]) -> None:
 
 def get_query_stats(queries: list[EvalQuery]) -> dict[str, Any]:
     """Get statistics about the dataset.
-    
+
     Args:
         queries: List of EvalQuery objects
-        
+
     Returns:
         Dictionary with dataset statistics
     """
@@ -91,7 +92,7 @@ def get_query_stats(queries: list[EvalQuery]) -> dict[str, Any]:
     total_relevant = sum(len(q.relevant_doc_ids) for q in queries)
     avg_relevant_per_query = total_relevant / total_queries if total_queries > 0 else 0
     languages = {q.language for q in queries}
-    
+
     return {
         "total_queries": total_queries,
         "total_relevant_documents": total_relevant,

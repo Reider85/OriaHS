@@ -136,11 +136,11 @@ class TestDeadLettersTotal:
 
 class TestRerankerLatencyMs:
     """Test reranker latency histogram (C-12)."""
-    
+
     def test_registered(self) -> None:
         output = _gather()
         assert "reranker_latency_ms" in output
-    
+
     def test_observe_increments_bucket(self) -> None:
         metrics.reranker_latency_ms.labels(device="cuda", mock=False).observe(150)
         output = _gather()
@@ -150,7 +150,7 @@ class TestRerankerLatencyMs:
         assert 'reranker_latency_ms_bucket{device="cuda",le="100.0",mock="False"} 0.0' in output
         assert 'reranker_latency_ms_bucket{device="cuda",le="200.0",mock="False"} 1.0' in output
         assert 'reranker_latency_ms_count{device="cuda",mock="False"} 1.0' in output
-    
+
     def test_multiple_labels(self) -> None:
         metrics.reranker_latency_ms.labels(device="cuda", mock=False).observe(50)
         metrics.reranker_latency_ms.labels(device="cpu", mock=True).observe(200)
@@ -163,11 +163,11 @@ class TestRerankerLatencyMs:
 
 class TestFusionStrategyUsage:
     """Test fusion strategy usage counter (C-12)."""
-    
+
     def test_registered(self) -> None:
         output = _gather()
         assert "fusion_strategy_usage" in output
-    
+
     def test_inc_with_label(self) -> None:
         metrics.fusion_strategy_usage_total.labels(strategy="rrf").inc()
         metrics.fusion_strategy_usage_total.labels(strategy="weighted").inc()
@@ -179,11 +179,11 @@ class TestFusionStrategyUsage:
 
 class TestCircuitBreakerState:
     """Test circuit breaker state gauge (C-12)."""
-    
+
     def test_registered(self) -> None:
         output = _gather()
         assert "circuit_breaker_state" in output
-    
+
     def test_set_with_label(self) -> None:
         metrics.circuit_breaker_state.labels(component="reranker").set(1)
         output = _gather()
@@ -192,26 +192,28 @@ class TestCircuitBreakerState:
 
 class TestCircuitBreakerOpenedTotal:
     """Test circuit breaker opened counter (C-12)."""
-    
+
     def test_registered(self) -> None:
         output = _gather()
         assert "circuit_breaker_opened_total" in output
-    
+
     def test_inc_with_labels(self) -> None:
         metrics.circuit_breaker_opened_total.labels(component="reranker", reason="error_rate").inc()
         metrics.circuit_breaker_opened_total.labels(component="reranker", reason="latency").inc()
         output = _gather()
-        assert 'circuit_breaker_opened_total{component="reranker",reason="error_rate"} 1.0' in output
+        assert (
+            'circuit_breaker_opened_total{component="reranker",reason="error_rate"} 1.0' in output
+        )
         assert 'circuit_breaker_opened_total{component="reranker",reason="latency"} 1.0' in output
 
 
 class TestCircuitBreakerRequestsTotal:
     """Test circuit breaker requests counter (C-12)."""
-    
+
     def test_registered(self) -> None:
         output = _gather()
         assert "circuit_breaker_requests_total" in output
-    
+
     def test_inc_with_labels(self) -> None:
         metrics.circuit_breaker_requests_total.labels(component="reranker", result="success").inc()
         metrics.circuit_breaker_requests_total.labels(component="reranker", result="error").inc()
@@ -219,16 +221,18 @@ class TestCircuitBreakerRequestsTotal:
         output = _gather()
         assert 'circuit_breaker_requests_total{component="reranker",result="success"} 1.0' in output
         assert 'circuit_breaker_requests_total{component="reranker",result="error"} 1.0' in output
-        assert 'circuit_breaker_requests_total{component="reranker",result="rejected"} 1.0' in output
+        assert (
+            'circuit_breaker_requests_total{component="reranker",result="rejected"} 1.0' in output
+        )
 
 
 class TestQdrantPushdownRate:
     """Test Qdrant push-down rate counter (C-12)."""
-    
+
     def test_registered(self) -> None:
         output = _gather()
         assert "qdrant_pushdown_rate" in output
-    
+
     def test_inc_with_label(self) -> None:
         metrics.qdrant_pushdown_rate_total.labels(result="used").inc()
         metrics.qdrant_pushdown_rate_total.labels(result="skipped").inc()

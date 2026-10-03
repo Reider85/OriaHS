@@ -51,13 +51,14 @@ class EmbeddingService:
         device = self._resolve_device()
         self._device = device
         if device == "cpu":
-            logger.warning(
-                "CUDA not available, running embedding model on CPU (slow)"
-            )
+            logger.warning("CUDA not available, running embedding model on CPU (slow)")
         t0 = time.perf_counter()
         model = SentenceTransformer("BAAI/bge-m3", device=device)
         model.max_seq_length = self._config.max_length
-        get_dimension = getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
+        get_dimension = (
+            getattr(model, "get_embedding_dimension", None)
+            or model.get_sentence_embedding_dimension
+        )
         dim = get_dimension()
         load_ms = (time.perf_counter() - t0) * 1000
         if dim != EXPECTED_DIMENSION:
@@ -102,23 +103,17 @@ class EmbeddingService:
             return np.empty((0, EXPECTED_DIMENSION), dtype=np.float32)
         if self._cache is None:
             return await self._encode(texts)
-        vectors = await self._cache.compute_with_cache(
-            texts, self._config.model_name, self._encode
-        )
+        vectors = await self._cache.compute_with_cache(texts, self._config.model_name, self._encode)
         return np.asarray(vectors, dtype=np.float32)
 
     async def embed_query(self, query: str) -> np.ndarray:
         """Encode a single query string (used by search channels)."""
         if self._cache is not None:
-            cached = await self._cache.get_query_embedding(
-                query, self._config.model_name
-            )
+            cached = await self._cache.get_query_embedding(query, self._config.model_name)
             if cached is not None:
                 return cached
         result = await self.embed_texts([query])
         vector: np.ndarray = result[0]
         if self._cache is not None:
-            await self._cache.set_query_embedding(
-                query, self._config.model_name, vector
-            )
+            await self._cache.set_query_embedding(query, self._config.model_name, vector)
         return vector

@@ -111,9 +111,7 @@ class ReconcilerWorker:
             return 0
 
         semaphore = asyncio.Semaphore(self._config.parallelism)
-        tasks = [
-            asyncio.create_task(self._process_row(row, semaphore)) for row in batch
-        ]
+        tasks = [asyncio.create_task(self._process_row(row, semaphore)) for row in batch]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for row, result in zip(batch, results, strict=False):
             if isinstance(result, BaseException):
@@ -136,22 +134,16 @@ class ReconcilerWorker:
     async def _claim_batch(self) -> list[PendingOutboxRow]:
         """Fast-path existence check, then ``FOR UPDATE SKIP LOCKED`` claim."""
         async with self._session_factory() as session:
-            metrics.index_lag_seconds.set(
-                await outbox_queries.index_lag_seconds(session)
-            )
+            metrics.index_lag_seconds.set(await outbox_queries.index_lag_seconds(session))
             outbox_pending_count = await outbox_queries.count_pending(session)
             metrics.outbox_pending_count.set(outbox_pending_count)
             metrics.reconciler_batch_size.set(self._config.batch_size)
             if not await outbox_queries.has_pending(session):
                 return []
-            batch = await outbox_queries.claim_pending(
-                session, self._config.batch_size
-            )
+            batch = await outbox_queries.claim_pending(session, self._config.batch_size)
             if not batch:
                 return []
-            await outbox_queries.mark_in_progress_many(
-                session, [row.id for row in batch]
-            )
+            await outbox_queries.mark_in_progress_many(session, [row.id for row in batch])
             await session.commit()
             return batch
 
@@ -224,9 +216,7 @@ class ReconcilerWorker:
         """Embed document.content (or reuse cache) and upsert to Qdrant."""
         document = await documents_queries.get_by_id(session, row.document_id)
         if document is None:
-            raise ValueError(
-                f"Document {row.document_id} not found for outbox row {row.id}"
-            )
+            raise ValueError(f"Document {row.document_id} not found for outbox row {row.id}")
 
         target_hash = row.content_hash or document.content_hash
         existing_hash = await self._qdrant.get_point_content_hash(row.document_id)
@@ -264,9 +254,7 @@ class ReconcilerWorker:
 
     def _get_embedding_service(self) -> EmbeddingService:
         if self._embedding is None:
-            self._embedding = EmbeddingService(
-                config=settings.embedding, cache=self._get_cache()
-            )
+            self._embedding = EmbeddingService(config=settings.embedding, cache=self._get_cache())
         return self._embedding
 
     def _get_cache(self) -> EmbeddingCache:

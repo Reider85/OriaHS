@@ -12,12 +12,10 @@ Timeout: 50ms per facet query to avoid blocking the main search response.
 """
 
 import logging
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import cast, func, select, text
 from sqlalchemy.dialects.postgresql import ARRAY, TEXT
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import FacetBucket
@@ -52,7 +50,7 @@ async def compute_facets(
     -------
     dict mapping field name to list of FacetBucket, sorted by count descending.
     Returns empty dict if doc_ids is empty or facet_fields is None.
-    
+
     A field whose query succeeded but matched nothing is present with an empty
     list; a field whose query failed is omitted entirely (None from the
     _compute_* helpers), so clients can tell "no matches" from "unknown".
@@ -61,7 +59,7 @@ async def compute_facets(
         return {}
 
     results: dict[str, list[FacetBucket]] = {}
-    
+
     for field in facet_fields:
         if field == "tags":
             buckets = await _compute_tag_facets(doc_ids, session, top_n)
@@ -70,7 +68,7 @@ async def compute_facets(
         else:
             logger.warning(f"Unsupported facet field: {field}")
             continue
-        
+
         if buckets is not None:
             # SQL уже ограничивает через LIMIT, но режем и здесь: контракт
             # top_n не должен зависеть от того, какой БД под капотом.
@@ -91,9 +89,9 @@ async def _compute_tag_facets(
         # в generic Function и роняет построение запроса. unnesting делаем
         # через unnest() + явный cast пустого массива, чтобы документы без
         # тегов не исчезали из GROUP BY.
-        tag = func.unnest(
-            func.coalesce(Document.tags, cast(text("'{}'"), ARRAY(TEXT)))
-        ).label("tag")
+        tag = func.unnest(func.coalesce(Document.tags, cast(text("'{}'"), ARRAY(TEXT)))).label(
+            "tag"
+        )
 
         stmt = (
             select(
@@ -109,15 +107,12 @@ async def _compute_tag_facets(
             .order_by(func.count().desc())
             .limit(top_n)
         )
-        
+
         result = await session.execute(stmt)
         rows = result.fetchall()
-        
-        return [
-            FacetBucket(value=row.tag, count=row.count)
-            for row in rows
-        ]
-        
+
+        return [FacetBucket(value=row.tag, count=row.count) for row in rows]
+
     except Exception as exc:
         logger.warning("Tag facets computation failed, returning empty", extra={"error": str(exc)})
         return None
@@ -130,7 +125,7 @@ async def _compute_category_facets(
     try:
         # Set statement timeout to avoid blocking the main response
         await session.execute(text("SET LOCAL statement_timeout = '50ms'"))
-        
+
         stmt = (
             select(
                 func.coalesce(Document.attributes["category"].astext, "").label("category"),
@@ -145,17 +140,16 @@ async def _compute_category_facets(
             .order_by(func.count().desc())
             .limit(top_n)
         )
-        
+
         result = await session.execute(stmt)
         rows = result.fetchall()
-        
-        return [
-            FacetBucket(value=row.category, count=row.count)
-            for row in rows
-        ]
-        
+
+        return [FacetBucket(value=row.category, count=row.count) for row in rows]
+
     except Exception as exc:
-        logger.warning("Category facets computation failed, returning empty", extra={"error": str(exc)})
+        logger.warning(
+            "Category facets computation failed, returning empty", extra={"error": str(exc)}
+        )
         return None
 
 

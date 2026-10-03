@@ -37,9 +37,7 @@ def _fake_session(explain_rows: list | None = None, doc_id_rows: list | None = N
     if explain_rows is not None:
         explain_result.fetchone.return_value = explain_rows
     else:
-        explain_result.fetchone.return_value = (
-            [{"Plan": {"Rows": 100}}],
-        )
+        explain_result.fetchone.return_value = ([{"Plan": {"Rows": 100}}],)
 
     doc_id_result = MagicMock()
     if doc_id_rows is not None:
@@ -61,6 +59,7 @@ def _fake_session(explain_rows: list | None = None, doc_id_rows: list | None = N
 # _has_selective_filters
 # ------------------------------------------------------------------
 
+
 class TestHasSelectiveFilters:
     def test_empty_filters(self) -> None:
         assert _has_selective_filters(SearchFilters()) is False
@@ -79,12 +78,14 @@ class TestHasSelectiveFilters:
 
     def test_created_after(self) -> None:
         from datetime import datetime
+
         assert _has_selective_filters(SearchFilters(created_after=datetime(2026, 1, 1))) is True
 
 
 # ------------------------------------------------------------------
 # _build_pushdown_where
 # ------------------------------------------------------------------
+
 
 class TestBuildPushdownWhere:
     def test_tenant_and_deleted(self) -> None:
@@ -122,6 +123,7 @@ class TestBuildPushdownWhere:
 
     def test_created_after_filter(self) -> None:
         from datetime import datetime
+
         dt = datetime(2026, 1, 1)
         clauses, params = _build_pushdown_where(uuid4(), SearchFilters(created_after=dt))
         assert "created_at >= :created_after" in clauses
@@ -132,6 +134,7 @@ class TestBuildPushdownWhere:
 # maybe_pushdown
 # ------------------------------------------------------------------
 
+
 class TestMaybePushdown:
     @pytest.mark.asyncio
     async def test_disabled_flag(self, redis: fakeredis.aioredis.FakeRedis) -> None:
@@ -140,7 +143,10 @@ class TestMaybePushdown:
             mock_settings.pushdown = PushdownConfig()
             mock_settings.feature_flags = MagicMock(pushdown_enabled=False)
             decision = await maybe_pushdown(
-                session, redis, uuid4(), SearchFilters(),
+                session,
+                redis,
+                uuid4(),
+                SearchFilters(),
             )
         assert decision.use_pushdown is False
         assert decision.reason == "disabled"
@@ -152,14 +158,19 @@ class TestMaybePushdown:
             mock_settings.pushdown = PushdownConfig()
             mock_settings.feature_flags = MagicMock(pushdown_enabled=True)
             decision = await maybe_pushdown(
-                session, redis, uuid4(), SearchFilters(),
+                session,
+                redis,
+                uuid4(),
+                SearchFilters(),
             )
         assert decision.use_pushdown is False
         assert decision.reason == "no_filters"
 
     @pytest.mark.asyncio
     async def test_selective_filter(
-        self, redis: fakeredis.aioredis.FakeRedis, config: PushdownConfig,
+        self,
+        redis: fakeredis.aioredis.FakeRedis,
+        config: PushdownConfig,
     ) -> None:
         """selectivity 0.05 < 0.1 threshold → push-down used."""
         session = _fake_session(
@@ -170,9 +181,15 @@ class TestMaybePushdown:
             mock_settings.pushdown = config
             mock_settings.feature_flags = MagicMock(pushdown_enabled=True)
 
-            with patch("app.search.pushdown.get_tenant_doc_count", new_callable=AsyncMock, return_value=10000):
+            with patch(
+                "app.search.pushdown.get_tenant_doc_count",
+                new_callable=AsyncMock,
+                return_value=10000,
+            ):
                 decision = await maybe_pushdown(
-                    session, redis, uuid4(),
+                    session,
+                    redis,
+                    uuid4(),
                     SearchFilters(attributes={"category": "ML"}),
                 )
 
@@ -183,7 +200,9 @@ class TestMaybePushdown:
 
     @pytest.mark.asyncio
     async def test_not_selective(
-        self, redis: fakeredis.aioredis.FakeRedis, config: PushdownConfig,
+        self,
+        redis: fakeredis.aioredis.FakeRedis,
+        config: PushdownConfig,
     ) -> None:
         """selectivity 0.3 >= 0.1 → push-down skipped."""
         session = _fake_session(
@@ -193,9 +212,15 @@ class TestMaybePushdown:
             mock_settings.pushdown = config
             mock_settings.feature_flags = MagicMock(pushdown_enabled=True)
 
-            with patch("app.search.pushdown.get_tenant_doc_count", new_callable=AsyncMock, return_value=10000):
+            with patch(
+                "app.search.pushdown.get_tenant_doc_count",
+                new_callable=AsyncMock,
+                return_value=10000,
+            ):
                 decision = await maybe_pushdown(
-                    session, redis, uuid4(),
+                    session,
+                    redis,
+                    uuid4(),
                     SearchFilters(attributes={"category": "ML"}),
                 )
 
@@ -204,7 +229,9 @@ class TestMaybePushdown:
 
     @pytest.mark.asyncio
     async def test_empty_result(
-        self, redis: fakeredis.aioredis.FakeRedis, config: PushdownConfig,
+        self,
+        redis: fakeredis.aioredis.FakeRedis,
+        config: PushdownConfig,
     ) -> None:
         """Zero matching rows → push-down with empty doc_ids."""
         session = _fake_session(
@@ -215,9 +242,15 @@ class TestMaybePushdown:
             mock_settings.pushdown = config
             mock_settings.feature_flags = MagicMock(pushdown_enabled=True)
 
-            with patch("app.search.pushdown.get_tenant_doc_count", new_callable=AsyncMock, return_value=10000):
+            with patch(
+                "app.search.pushdown.get_tenant_doc_count",
+                new_callable=AsyncMock,
+                return_value=10000,
+            ):
                 decision = await maybe_pushdown(
-                    session, redis, uuid4(),
+                    session,
+                    redis,
+                    uuid4(),
                     SearchFilters(attributes={"category": "very_rare"}),
                 )
 
@@ -226,7 +259,9 @@ class TestMaybePushdown:
 
     @pytest.mark.asyncio
     async def test_too_large(
-        self, redis: fakeredis.aioredis.FakeRedis, config: PushdownConfig,
+        self,
+        redis: fakeredis.aioredis.FakeRedis,
+        config: PushdownConfig,
     ) -> None:
         """More than max_candidate_ids → push-down skipped."""
         session = _fake_session(
@@ -237,9 +272,15 @@ class TestMaybePushdown:
             mock_settings.pushdown = config
             mock_settings.feature_flags = MagicMock(pushdown_enabled=True)
 
-            with patch("app.search.pushdown.get_tenant_doc_count", new_callable=AsyncMock, return_value=10000):
+            with patch(
+                "app.search.pushdown.get_tenant_doc_count",
+                new_callable=AsyncMock,
+                return_value=10000,
+            ):
                 decision = await maybe_pushdown(
-                    session, redis, uuid4(),
+                    session,
+                    redis,
+                    uuid4(),
                     SearchFilters(attributes={"category": "ML"}),
                 )
 
@@ -250,6 +291,7 @@ class TestMaybePushdown:
 # ------------------------------------------------------------------
 # vector_search with pushdown_ids
 # ------------------------------------------------------------------
+
 
 class TestVectorSearchPushdown:
     @pytest.mark.asyncio
@@ -263,8 +305,13 @@ class TestVectorSearchPushdown:
         emb_cache = AsyncMock()
 
         result = await vector_search(
-            session, qdrant, emb_svc, emb_cache,
-            query="test", tenant_id=uuid4(), filters=SearchFilters(),
+            session,
+            qdrant,
+            emb_svc,
+            emb_cache,
+            query="test",
+            tenant_id=uuid4(),
+            filters=SearchFilters(),
             pushdown_ids=[],
         )
         assert result == []
@@ -282,17 +329,26 @@ class TestVectorSearchPushdown:
         emb_svc = AsyncMock()
         emb_cache = AsyncMock()
         emb_cache.get_query_embedding = AsyncMock(return_value=None)
-        emb_svc.embed_query = AsyncMock(return_value=__import__("numpy").zeros(1024, dtype=__import__("numpy").float32))
+        emb_svc.embed_query = AsyncMock(
+            return_value=__import__("numpy").zeros(1024, dtype=__import__("numpy").float32)
+        )
 
         await vector_search(
-            session, qdrant, emb_svc, emb_cache,
-            query="test", tenant_id=uuid4(), filters=SearchFilters(),
+            session,
+            qdrant,
+            emb_svc,
+            emb_cache,
+            query="test",
+            tenant_id=uuid4(),
+            filters=SearchFilters(),
             pushdown_ids=doc_ids,
         )
 
         call_args = qdrant.search.call_args
         qfilter = call_args.kwargs.get("query_filter") or call_args[1].get("query_filter")
         must_conditions = qfilter.must
-        pushdown_cond = [c for c in must_conditions if hasattr(c, "match") and hasattr(c.match, "any")]
+        pushdown_cond = [
+            c for c in must_conditions if hasattr(c, "match") and hasattr(c.match, "any")
+        ]
         assert len(pushdown_cond) == 1
         assert len(pushdown_cond[0].match.any) == 2
