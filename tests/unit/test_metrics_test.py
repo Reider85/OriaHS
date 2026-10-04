@@ -1,6 +1,6 @@
 """Unit tests for Prometheus metrics (P-15, C-12 Critical, ARCHITECT §11.1).
 
-Verifies that all 22 metrics (7 MVP + 15 Critical) are registered in the default
+Verifies that all 27 metrics (7 MVP + 15 Critical + 3 extras + 2 B-09) are registered in the default
 Prometheus registry and that increment/observe operations update the exposed values.
 """
 
@@ -34,6 +34,14 @@ def _reset_metrics() -> None:  # type: ignore[misc]
         metrics.circuit_breaker_requests_total,
         metrics.fusion_strategy_usage_total,
         metrics.qdrant_pushdown_rate_total,
+        # Additional metrics for complete reset
+        metrics.reconciler_batch_size,
+        metrics.outbox_pending_count,
+        metrics.outbox_throttled_total,
+        metrics.outbox_reindex_triggered_total,
+        metrics.search_partial_total,
+        metrics.eval_regression_detected_total,
+        metrics.pushdown_selectivity,
     ]:
         if hasattr(collector, "clear"):
             collector.clear()
@@ -243,7 +251,7 @@ class TestQdrantPushdownRate:
 
 
 class TestAllMetricsExposed:
-    """Catch-all: all 22 metrics (7 MVP + 15 Critical) must appear in the exposition output."""
+    """Catch-all: all 27 metrics (7 MVP + 15 Critical + 3 extras + 2 B-09) must appear in the exposition output."""
 
     @pytest.mark.parametrize(
         "metric_name",
@@ -263,9 +271,23 @@ class TestAllMetricsExposed:
             "circuit_breaker_opened_total",
             "circuit_breaker_requests_total",
             "qdrant_pushdown_rate_total",
+            # Extra metrics (beyond C-12)
+            "reconciler_batch_size",
+            "eval_runs_total",
+            "eval_regression_detected_total",
             # B-09 metrics
             "vector_search_latency_ms",
             "eval_last_run_timestamp",
+            # Additional Critical metrics (C-12)
+            "pushdown_selectivity",
+            "eval_recall_at_10",
+            "eval_ndcg_at_10",
+            "eval_mrr",
+            "outbox_pending_count",
+            "outbox_throttled_total",
+            "outbox_reindex_triggered_total",
+            "search_degraded_total",
+            "search_partial_total",
         ],
     )
     def test_metric_present(self, metric_name: str) -> None:
