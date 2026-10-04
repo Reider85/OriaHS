@@ -20,6 +20,7 @@ from app.config import settings
 from app.db.models import Document
 from app.db.queries import documents, outbox
 from app.db.queries.embedding_models import get_default_model
+from app.observability import metrics
 from app.observability.logging import get_logger, tenant_id_ctx
 from app.services.throttle import OutboxThrottle
 
@@ -124,8 +125,15 @@ class IndexingService:
                 if await self._throttle.should_throttle():
                     throttled = True
                     status_str = "throttled"
+                    # Log pending count (C-11 requirement)
+                    logger.info(
+                        "Index request throttled",
+                        extra={"pending_count": await self._throttle.get_pending_count()},
+                    )
                     # Check if reindex should be triggered
                     await self._throttle.check_and_log_reindex_trigger()
+                    # Increment throttle metric (B-06)
+                    metrics.outbox_throttled_total.inc()
                 else:
                     status_str = "queued"
 

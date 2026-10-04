@@ -77,7 +77,7 @@ class QdrantService:
         Uses 100ms timeout to avoid blocking search requests.
         """
         try:
-            await asyncio.wait_for(self._client.get_collection_info(self._collection), timeout=0.1)
+            await asyncio.wait_for(self._client.get_collection(self._collection), timeout=0.1)
             return True
         except Exception:
             return False

@@ -219,3 +219,81 @@ async def test_index_route_throttle_202(wired_app, engine) -> None:
     data = resp.json()
     assert data["status"] == "throttled"
     assert data["throttled"] is True
+
+
+@pytest.mark.slow
+async def test_index_throttle_returns_202_and_increments_metric(wired_app, engine) -> None:
+    """POST /index with 60k pending returns 202 + increments outbox_throttled_total (B-06)."""
+    from app.observability import metrics
+
+    _, client = wired_app
+
+    # Get initial metric value
+    initial_metric_value = metrics.outbox_throttled_total._value._value
+
+    async with engine.begin() as conn:
+        # Seed 60k pending outbox entries
+        await conn.execute(
+            text("""
+            INSERT INTO documents (tenant_id, external_ref, title, content,
+                                   language, embedding_model, content_hash)
+            SELECT gen_random_uuid(), 'metric-' || i, '', '', 'en',
+                   'bge-m3-v1', 'hash-' || i
+            FROM generate_series(1, 60000) AS i
+        """)
+        )
+        await conn.execute(
+            text("""
+            INSERT INTO search_outbox (document_id, op, status, next_retry_at)
+            SELECT id, 'upsert', 'pending', now()
+            FROM documents WHERE external_ref LIKE 'metric-%'
+        """)
+        )
+
+    # POST should be throttled (202)
+    resp = await client.post("/index", json=_payload(external_ref="metric-post"))
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["status"] == "throttled"
+    assert data["throttled"] is True
+
+    # Verify metric was incremented by exactly 1
+    final_metric_value = metrics.outbox_throttled_total._value._value
+    assert final_metric_value == initial_metric_value + 1
+
+    # Test 1000 pending → 201 + metric unchanged (B-06 AC 5)
+    # Clear metric value for clean test
+    metrics.outbox_throttled_total._value._value = initial_metric_value
+
+    async with engine.begin() as conn:
+        # Clear outbox and seed only 1000 pending
+        await conn.execute(text("DELETE FROM search_outbox"))
+        await conn.execute(text("DELETE FROM documents"))
+
+        await conn.execute(
+            text("""
+            INSERT INTO documents (tenant_id, external_ref, title, content,
+                                   language, embedding_model, content_hash)
+            SELECT gen_random_uuid(), 'low-pending-' || i, '', '', 'en',
+                   'bge-m3-v1', 'hash-' || i
+            FROM generate_series(1, 1000) AS i
+        """)
+        )
+        await conn.execute(
+            text("""
+            INSERT INTO search_outbox (document_id, op, status, next_retry_at)
+            SELECT id, 'upsert', 'pending', now()
+            FROM documents WHERE external_ref LIKE 'low-pending-%'
+        """)
+        )
+
+    # Should not be throttled (201)
+    resp = await client.post("/index", json=_payload(external_ref="low-pending-post"))
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "queued"
+    assert data["throttled"] is False
+
+    # Verify metric was NOT incremented
+    final_metric_value = metrics.outbox_throttled_total._value._value
+    assert final_metric_value == initial_metric_value

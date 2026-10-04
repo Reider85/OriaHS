@@ -175,7 +175,7 @@ class SearchOrchestrator:
         if self._qdrant_health_check and self._flags.vector_search_enabled:
             try:
                 is_healthy = await asyncio.wait_for(
-                    self._qdrant.get_collection_info("documents"), timeout=0.1
+                    self._qdrant.get_collection("documents"), timeout=0.1
                 )
                 if not is_healthy:
                     logger.warning("Qdrant health check failed, using lexical only")
