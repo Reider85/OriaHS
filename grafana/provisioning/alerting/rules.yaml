@@ -1,0 +1,95 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: oriahs-default
+    receivers:
+      - uid: oriahs-null
+        type: null
+
+policies:
+  - orgId: 1
+    name: oriahs-default-policy
+    receiver: oriahs-default
+    groupBy: []
+    groupInterval: 1m
+    rule:
+      for: 0m
+      noDataState: NoData
+      evaluationInterval: 1m
+
+groups:
+  - orgId: 1
+    name: oriahs-critical-alerts
+    folder: Critical
+    interval: 1m
+    rules:
+      - uid: circuit_breaker_open_60s
+        title: Circuit breaker open > 60s
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max_over_time(circuit_breaker_state{component="reranker"}[1m])
+              instant: true
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: A == 2
+              type: threshold
+              params:
+                mode: "absolute"
+                gt: 0
+                lt: 1
+        noDataState: NoData
+        execErrState: Alerting
+        for: 60s
+        annotations:
+          summary: Reranker circuit breaker has been open for more than 60 seconds
+        labels:
+          severity: critical
+          component: reranker
+        dashboardUid: critical-circuit-breaker
+        panelId: 1
+
+      - uid: recall_drop_2pct
+        title: Recall drop > 2%
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 86400
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: eval_recall_at_10{strategy="rrf"} - eval_recall_at_10{strategy="rrf"} offset 1d
+              instant: true
+          - refId: B
+            relativeTimeRange:
+              from: 86400
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: A > 0.02
+              type: threshold
+              params:
+                mode: "absolute"
+                gt: 0
+                lt: 1
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: Recall@10 has improved by more than 2% (unexpected positive change)
+        labels:
+          severity: info
+          component: eval
+        dashboardUid: critical-eval-regression
+        panelId: 1

@@ -1,14 +1,33 @@
 {
   "dashboard": {
     "id": null,
+    "uid": "critical-reranker",
     "title": "Critical — Reranker",
     "tags": ["critical", "reranker"],
     "timezone": "browser",
+    "schemaVersion": 39,
+    "templating": {
+      "list": [
+        {
+          "name": "DS_PROMETHEUS",
+          "label": "Prometheus",
+          "type": "datasource",
+          "query": "prometheus",
+          "current": {},
+          "hide": 0,
+          "refresh": 1
+        }
+      ]
+    },
     "panels": [
       {
         "id": 1,
         "title": "Reranker Latency p50/p95/p99",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "histogram_quantile(0.5, rate(reranker_latency_ms_bucket[5m]))",
@@ -50,6 +69,10 @@
         "id": 2,
         "title": "Circuit Breaker State",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "circuit_breaker_state{component=\"reranker\"}",
@@ -114,6 +137,10 @@
         "id": 3,
         "title": "Mock Mode Indicator",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "rate(reranker_latency_ms_bucket{mock=\"true\"}[5m])",
@@ -147,6 +174,10 @@
         "id": 4,
         "title": "Reranker Throughput",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "rate(circuit_breaker_requests_total{component=\"reranker\",result=\"success\"}[5m])",

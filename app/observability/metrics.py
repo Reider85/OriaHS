@@ -208,6 +208,25 @@ outbox_reindex_triggered_total = Counter(
     "Total full reindex triggers from outbox overflow.",
 )
 
+# ---------------------------------------------------------------------------
+# Vector search latency — filled by vector_search after every vector channel call (B-09)
+# Buckets in milliseconds (C-10: push-down p99 ≤ 50ms)
+# ---------------------------------------------------------------------------
+vector_search_latency_ms = Histogram(
+    "vector_search_latency_ms",
+    "Vector channel (Qdrant kNN) latency in milliseconds.",
+    labelnames=["pushdown"],  # "true", "false"
+    buckets=[5, 10, 25, 50, 100, 200, 500, 1000],
+)
+
+# ---------------------------------------------------------------------------
+# Nightly eval timestamp — filled by NightlyEvalJob after each run (B-09)
+# ---------------------------------------------------------------------------
+eval_last_run_timestamp = Gauge(
+    "eval_last_run_timestamp",
+    "Unix timestamp of the last completed nightly eval run.",
+)
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
@@ -234,4 +253,6 @@ __all__ = [
     "pushdown_selectivity",
     "outbox_throttled_total",
     "outbox_reindex_triggered_total",
+    "vector_search_latency_ms",
+    "eval_last_run_timestamp",
 ]

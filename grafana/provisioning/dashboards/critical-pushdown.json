@@ -1,14 +1,33 @@
 {
   "dashboard": {
     "id": null,
+    "uid": "critical-pushdown",
     "title": "Critical — Push-down",
     "tags": ["critical", "pushdown"],
     "timezone": "browser",
+    "schemaVersion": 39,
+    "templating": {
+      "list": [
+        {
+          "name": "DS_PROMETHEUS",
+          "label": "Prometheus",
+          "type": "datasource",
+          "query": "prometheus",
+          "current": {},
+          "hide": 0,
+          "refresh": 1
+        }
+      ]
+    },
     "panels": [
       {
         "id": 1,
         "title": "Push-down Usage Rate",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "rate(qdrant_pushdown_rate_total{result=\"used\"}[5m]) / rate(qdrant_pushdown_rate_total[5m]) * 100",
@@ -42,6 +61,10 @@
         "id": 2,
         "title": "Selectivity Gauge",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "pushdown_selectivity",
@@ -73,34 +96,44 @@
       },
       {
         "id": 3,
-        "title": "Push-down Results Breakdown",
+        "title": "Latency comparison: push-down vs no-push-down",
         "type": "timeseries",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
-            "expr": "rate(qdrant_pushdown_rate_total{result=\"used\"}[5m])",
-            "legendFormat": "Used"
+            "expr": "histogram_quantile(0.99, rate(vector_search_latency_ms_bucket{pushdown=\"true\"}[5m]))",
+            "legendFormat": "push-down p99"
           },
           {
-            "expr": "rate(qdrant_pushdown_rate_total{result=\"skipped\"}[5m])",
-            "legendFormat": "Skipped"
-          },
-          {
-            "expr": "rate(qdrant_pushdown_rate_total{result=\"too_large\"}[5m])",
-            "legendFormat": "Too large"
-          },
-          {
-            "expr": "rate(qdrant_pushdown_rate_total{result=\"no_filters\"}[5m])",
-            "legendFormat": "No filters"
-          },
-          {
-            "expr": "rate(qdrant_pushdown_rate_total{result=\"disabled\"}[5m])",
-            "legendFormat": "Disabled"
-          },
-          {
-            "expr": "rate(qdrant_pushdown_rate_total{result=\"not_selective\"}[5m])",
-            "legendFormat": "Not selective"
+            "expr": "histogram_quantile(0.99, rate(vector_search_latency_ms_bucket{pushdown=\"false\"}[5m]))",
+            "legendFormat": "no push-down p99"
           }
         ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 50
+                },
+                {
+                  "color": "red",
+                  "value": 100
+                }
+              ]
+            },
+            "unit": "ms"
+          }
+        }
         "fieldConfig": {
           "defaults": {
             "mappings": [],
@@ -128,6 +161,10 @@
         "id": 4,
         "title": "Too-Large Rejections",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "rate(qdrant_pushdown_rate_total{result=\"too_large\"}[5m])",

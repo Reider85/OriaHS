@@ -341,6 +341,9 @@ class NightlyEvalJob:
 
             metrics.eval_runs_total.labels(strategy=strategy).inc()
 
+        # B-09: timestamp of this eval run for Grafana "Last run timestamp" panel
+        metrics.eval_last_run_timestamp.set(time.time())
+
     def _log_worst_queries(
         self, queries: list[EvalQuery], per_query_recalls: dict[str, dict[str, float]]
     ) -> None:

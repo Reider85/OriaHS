@@ -1,14 +1,33 @@
 {
   "dashboard": {
     "id": null,
+    "uid": "critical-circuit-breaker",
     "title": "Critical — Circuit Breaker & Throttle",
     "tags": ["critical", "circuit-breaker"],
     "timezone": "browser",
+    "schemaVersion": 39,
+    "templating": {
+      "list": [
+        {
+          "name": "DS_PROMETHEUS",
+          "label": "Prometheus",
+          "type": "datasource",
+          "query": "prometheus",
+          "current": {},
+          "hide": 0,
+          "refresh": 1
+        }
+      ]
+    },
     "panels": [
       {
         "id": 1,
         "title": "Circuit Breaker State",
         "type": "timeseries",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "circuit_breaker_state{component=\"reranker\"}",
@@ -73,6 +92,10 @@
         "id": 2,
         "title": "Open Events",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "rate(circuit_breaker_opened_total[1h])",
@@ -106,6 +129,10 @@
         "id": 3,
         "title": "Outbox Pending Count",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "outbox_pending_count",
@@ -139,6 +166,10 @@
         "id": 4,
         "title": "Throttle Rate",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "rate(outbox_throttled_total[5m])",

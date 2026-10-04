@@ -1,14 +1,33 @@
 {
   "dashboard": {
     "id": null,
+    "uid": "critical-eval-regression",
     "title": "Critical — Eval Regression",
     "tags": ["critical", "eval"],
     "timezone": "browser",
+    "schemaVersion": 39,
+    "templating": {
+      "list": [
+        {
+          "name": "DS_PROMETHEUS",
+          "label": "Prometheus",
+          "type": "datasource",
+          "query": "prometheus",
+          "current": {},
+          "hide": 0,
+          "refresh": 1
+        }
+      ]
+    },
     "panels": [
       {
         "id": 1,
         "title": "Recall@10 by Strategy",
         "type": "timeseries",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "eval_recall_at_10{strategy=\"rrf\"}",
@@ -50,6 +69,10 @@
         "id": 2,
         "title": "nDCG@10 by Strategy",
         "type": "timeseries",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "eval_ndcg_at_10{strategy=\"rrf\"}",
@@ -91,6 +114,10 @@
         "id": 3,
         "title": "MRR by Strategy",
         "type": "timeseries",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
             "expr": "eval_mrr{strategy=\"rrf\"}",
@@ -130,18 +157,24 @@
       },
       {
         "id": 4,
-        "title": "Eval Runs & Regressions",
+        "title": "Last run timestamp",
         "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "targets": [
           {
-            "expr": "eval_runs_total",
-            "legendFormat": "Total eval runs"
-          },
-          {
-            "expr": "eval_regression_detected_total",
-            "legendFormat": "Regressions detected"
+            "expr": "eval_last_run_timestamp",
+            "legendFormat": "Last eval run"
           }
         ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "dateTimeAsIso",
+            "mappings": []
+          }
+        }
         "fieldConfig": {
           "defaults": {
             "mappings": [],

@@ -263,6 +263,9 @@ class TestAllMetricsExposed:
             "circuit_breaker_opened_total",
             "circuit_breaker_requests_total",
             "qdrant_pushdown_rate_total",
+            # B-09 metrics
+            "vector_search_latency_ms",
+            "eval_last_run_timestamp",
         ],
     )
     def test_metric_present(self, metric_name: str) -> None:

@@ -10,6 +10,7 @@ Postgres so a soft-deleted document can never surface through this channel.
 """
 
 import asyncio
+import time
 from typing import Literal
 from uuid import UUID
 
@@ -25,6 +26,7 @@ from app.config import settings
 from app.db.models.document import Document
 from app.embedding.cache import EmbeddingCache
 from app.embedding.service import EmbeddingService
+from app.observability import metrics
 from app.search.exceptions import QdrantTimeoutError, QdrantUnavailableError
 from app.search.filters import SearchFilters
 
@@ -139,9 +141,12 @@ async def vector_search(
     Implements timeout retry with exponential backoff (C-09).
     """
     if pushdown_ids is not None and len(pushdown_ids) == 0:
+        # Short-circuit: push-down pre-filter returned nothing.
+        metrics.vector_search_latency_ms.labels(pushdown="true").observe(0.0)
         return []
 
     model_name = model_name or DEFAULT_MODEL_NAME
+    pushdown_label = "true" if pushdown_ids else "false"
 
     vec = await embedding_cache.get_query_embedding(query, model_name)
     if vec is None:
@@ -151,17 +156,20 @@ async def vector_search(
     qfilter = build_qdrant_filter(tenant_id, filters, model_name)
 
     if pushdown_ids:
-        qfilter.must.append(
+        must_conditions = qfilter.must or []
+        must_conditions.append(
             qmodels.FieldCondition(
                 key="doc_id",
                 match=qmodels.MatchAny(any=[str(d) for d in pushdown_ids]),
             )
         )
+        qfilter = qmodels.Filter(must=must_conditions)
 
     # Timeout retry logic (max 1 retry for Qdrant)
     max_retries = 1
     last_error = None
 
+    start = time.perf_counter()
     for attempt in range(max_retries + 1):
         try:
             scored = await asyncio.wait_for(
@@ -190,6 +198,9 @@ async def vector_search(
             raise QdrantUnavailableError(f"Qdrant unavailable (status={status}): {exc}") from exc
         except Exception as exc:  # aiohttp connection errors etc.
             raise QdrantUnavailableError(f"Qdrant unavailable: {exc}") from exc
+
+    latency_ms = (time.perf_counter() - start) * 1000.0
+    metrics.vector_search_latency_ms.labels(pushdown=pushdown_label).observe(latency_ms)
 
     if not scored:
         return []
