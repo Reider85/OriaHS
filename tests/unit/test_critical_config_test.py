@@ -102,6 +102,7 @@ class TestEvalConfig:
         assert config.recall_regression_threshold == 0.02
         assert config.ndcg_regression_threshold == 0.01
         assert config.cron == "0 2 * * *"
+        assert config.block_release is True
 
     def test_env_override(self):
         """Test environment variable override."""

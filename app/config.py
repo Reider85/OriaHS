@@ -148,6 +148,7 @@ class EvalConfig(BaseSettings):
     recall_regression_threshold: float = Field(default=0.02, ge=0.0)
     ndcg_regression_threshold: float = Field(default=0.01, ge=0.0)
     cron: str = "0 2 * * *"  # nightly at 02:00 UTC
+    block_release: bool = Field(True)
 
 
 class PushdownConfig(BaseSettings):

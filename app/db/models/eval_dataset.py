@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID as PythonUUID
 
-from sqlalchemy import DateTime, Integer, Text, func
+from sqlalchemy import DateTime, Integer, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.models.base import Base
@@ -25,7 +25,7 @@ class EvalDataset(Base):
 
     __table_args__ = (
         # Unique constraint on (name, version) to avoid duplicate registrations
-        {"info": {"check_constraints": False, "unique_together": [("name", "version")]}},
+        UniqueConstraint("name", "version", name="uq_eval_datasets_name_version"),
     )
 
     def __repr__(self) -> str:

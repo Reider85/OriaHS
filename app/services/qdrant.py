@@ -6,6 +6,7 @@ point upsert, delete and the ``content_hash`` fast-path read (ARCHITECT
 to prevent schema drift between Postgres and Qdrant.
 """
 
+import asyncio
 from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
@@ -27,6 +28,10 @@ class QdrantService:
     ) -> None:
         self._client = client or get_async_qdrant_client()
         self._collection = collection_name or settings.qdrant.collection
+
+    def get_async_client(self) -> AsyncQdrantClient:
+        """Get the async Qdrant client."""
+        return self._client
 
     async def get_point_content_hash(self, doc_id: UUID) -> str | None:
         """Fast-path read: the stored ``content_hash`` of a point, if any.

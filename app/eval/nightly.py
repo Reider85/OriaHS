@@ -7,6 +7,7 @@ computes metrics, saves results, detects regressions, and blocks release.
 import asyncio
 import logging
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,8 +70,9 @@ class NightlyEvalJob:
         """Get or create SearchOrchestrator with required dependencies."""
         if self._orchestrator is None:
             # Create minimal orchestrator for eval (no reranker needed for RRF/weighted)
+            # Note: session will be overridden per-query
             self._orchestrator = SearchOrchestrator(
-                session=self._session_factory(),  # Will be overridden per-query
+                session=None,  # Will be overridden per-query
                 qdrant_client=self._qdrant_service.get_async_client(),
                 embedding_service=None,  # Not needed for eval queries
                 embedding_cache=None,  # Not needed for eval queries
@@ -99,13 +101,14 @@ class NightlyEvalJob:
             validate_dataset(queries)
 
             # Register dataset in DB
-            dataset = await eval_queries.register_dataset(
-                session=await self._session_factory(),
-                name="baseline_v1",
-                version="v1",
-                path=self._eval_config.dataset_path,
-                query_count=len(queries),
-            )
+            async with self._session_factory() as session:
+                dataset = await eval_queries.register_dataset(
+                    session=session,
+                    name="baseline_v1",
+                    version="v1",
+                    path=self._eval_config.dataset_path,
+                    query_count=len(queries),
+                )
 
             # Get current git SHA for reproducibility
             git_sha = self._get_git_sha()
@@ -115,18 +118,21 @@ class NightlyEvalJob:
             strategy_results = {}
             baseline_metrics = {}
             regressions = {}
+            per_query_recalls: dict[str, dict[str, float]] = {}
 
             for strategy in strategies:
                 logger.info(f"Running evaluation for strategy: {strategy}")
 
                 # Run eval for this strategy
-                results = await self._run_strategy_evaluation(queries, strategy)
+                results, query_recalls = await self._run_strategy_evaluation(queries, strategy)
                 strategy_results[strategy] = results
+                per_query_recalls[strategy] = query_recalls
 
                 # Get baseline for comparison
-                baseline = await eval_queries.get_baseline(
-                    await self._session_factory(), str(dataset.id), strategy
-                )
+                async with self._session_factory() as session:
+                    baseline = await eval_queries.get_baseline(
+                        session, str(dataset.id), strategy
+                    )
                 if baseline:
                     baseline_metrics[strategy] = {
                         "recall_at_10": baseline.recall_at_10,
@@ -150,23 +156,24 @@ class NightlyEvalJob:
                     )
 
             # Save results to database
-            for strategy, results in strategy_results.items():
-                await eval_queries.save_result(
-                    session=await self._session_factory(),
-                    dataset_id=str(dataset.id),
-                    strategy=strategy,
-                    recall_at_10=results["recall_at_10"],
-                    ndcg_at_10=results["ndcg_at_10"],
-                    mrr=results["mrr"],
-                    git_sha=git_sha,
-                    extra={"queries_processed": len(queries)},
-                )
+            async with self._session_factory() as session:
+                for strategy, results in strategy_results.items():
+                    await eval_queries.save_result(
+                        session=session,
+                        dataset_id=str(dataset.id),
+                        strategy=strategy,
+                        recall_at_10=results["recall_at_10"],
+                        ndcg_at_10=results["ndcg_at_10"],
+                        mrr=results["mrr"],
+                        git_sha=git_sha,
+                        extra={"queries_processed": len(queries)},
+                    )
 
             # Publish metrics
             self._publish_metrics(strategy_results, git_sha)
 
             # Log worst performing queries
-            self._log_worst_queries(queries, strategy_results)
+            self._log_worst_queries(queries, per_query_recalls)
 
             run_duration = time.monotonic() - start_time
             regression_detected = bool(regressions)
@@ -193,7 +200,7 @@ class NightlyEvalJob:
 
     async def _run_strategy_evaluation(
         self, queries: list[EvalQuery], strategy: str
-    ) -> dict[str, float]:
+    ) -> tuple[dict[str, float], dict[str, float]]:
         """Run evaluation for a single strategy.
 
         Args:
@@ -210,7 +217,7 @@ class NightlyEvalJob:
         # Build search request based on strategy
         if strategy == "rrf":
             search_request = SearchRequest(
-                query="",  # Will be set per query
+                query="temp",  # Will be set per query
                 tenant_id=queries[0].tenant_id,
                 top_k=10,  # Standard eval top-K
                 fusion="rrf",
@@ -219,7 +226,7 @@ class NightlyEvalJob:
             )
         elif strategy == "weighted":
             search_request = SearchRequest(
-                query="",  # Will be set per query
+                query="temp",  # Will be set per query
                 tenant_id=queries[0].tenant_id,
                 top_k=10,
                 fusion="weighted",
@@ -229,7 +236,7 @@ class NightlyEvalJob:
             )
         elif strategy == "weighted+rerank":
             search_request = SearchRequest(
-                query="",  # Will be set per query
+                query="temp",  # Will be set per query
                 tenant_id=queries[0].tenant_id,
                 top_k=10,
                 fusion="weighted",
@@ -244,12 +251,17 @@ class NightlyEvalJob:
         orchestrator = self._get_orchestrator()
 
         # Process each query
+        per_query_recall: dict[str, float] = {}
         for query in queries:
             search_request.query = query.query
 
             try:
-                # Run search (internal call, no HTTP overhead)
-                response = await orchestrator.search(search_request)
+                # Create a new session for this query
+                async with self._session_factory() as session:
+                    # Override the session in orchestrator for this query
+                    orchestrator._session = session
+                    # Run search (internal call, no HTTP overhead)
+                    response = await orchestrator.search(search_request)
 
                 # Extract top-10 doc_ids
                 retrieved_doc_ids = [hit.doc_id for hit in response.hits[:10]]
@@ -259,7 +271,9 @@ class NightlyEvalJob:
                 relevant_ids = set(str(doc_id) for doc_id in query.relevant_doc_ids)
 
                 # Compute metrics
-                recall_scores.append(recall_at_10(retrieved_ids, relevant_ids))
+                recall = recall_at_10(retrieved_ids, relevant_ids)
+                per_query_recall[query.query_id] = recall
+                recall_scores.append(recall)
                 ndcg_scores.append(ndcg_at_10(retrieved_ids, relevant_ids))
                 mrr_scores.append(mrr(retrieved_ids, relevant_ids))
 
@@ -269,15 +283,19 @@ class NightlyEvalJob:
                     extra={"query_id": query.query_id, "error": str(e)},
                 )
                 # Give worst possible score for failed queries
+                per_query_recall[query.query_id] = 0.0
                 recall_scores.append(0.0)
                 ndcg_scores.append(0.0)
                 mrr_scores.append(0.0)
 
-        return {
-            "recall_at_10": np.mean(recall_scores),
-            "ndcg_at_10": np.mean(ndcg_scores),
-            "mrr": np.mean(mrr_scores),
-        }
+        return (
+            {
+                "recall_at_10": np.mean(recall_scores),
+                "ndcg_at_10": np.mean(ndcg_scores),
+                "mrr": np.mean(mrr_scores),
+            },
+            per_query_recall,
+        )
 
     def _check_regression(
         self, strategy: str, current: dict[str, float], baseline: dict[str, float] | None
@@ -324,21 +342,29 @@ class NightlyEvalJob:
             metrics.eval_runs_total.labels(strategy=strategy).inc()
 
     def _log_worst_queries(
-        self, queries: list[EvalQuery], strategy_results: dict[str, dict[str, float]]
+        self, queries: list[EvalQuery], per_query_recalls: dict[str, dict[str, float]]
     ) -> None:
         """Log the 3 worst performing queries for debugging."""
-        # This is a simplified version - in production you might want to track per-query performance
-        worst_queries = []
-        for query in queries[:3]:  # Just log first 3 for now
-            worst_queries.append(
-                {
-                    "query_id": query.query_id,
-                    "query": query.query[:100] + "..." if len(query.query) > 100 else query.query,
-                    "relevant_count": len(query.relevant_doc_ids),
-                }
+        query_map = {q.query_id: q for q in queries}
+        for strategy, recall_map in per_query_recalls.items():
+            worst = sorted(recall_map.items(), key=lambda item: item[1])[:3]
+            worst_queries = []
+            for query_id, recall in worst:
+                query = query_map.get(query_id)
+                if query is None:
+                    continue
+                worst_queries.append(
+                    {
+                        "query_id": query_id,
+                        "query": query.query[:100] + "..." if len(query.query) > 100 else query.query,
+                        "recall": recall,
+                        "relevant_count": len(query.relevant_doc_ids),
+                    }
+                )
+            logger.info(
+                "Worst performing queries",
+                extra={"strategy": strategy, "worst_queries": worst_queries},
             )
-
-        logger.info("Sample queries for debugging", extra={"worst_queries": worst_queries})
 
     def _get_git_sha(self) -> str:
         """Get current git SHA for reproducibility."""
@@ -365,12 +391,12 @@ async def _main() -> None:
     job = NightlyEvalJob()
     report = await job.run()
 
-    if report.regression_detected:
+    if report.regression_detected and job._eval_config.block_release:
         logger.error("Regression detected - blocking release")
-        exit(1)
+        sys.exit(1)
     else:
         logger.info("No regressions detected - release safe")
-        exit(0)
+        sys.exit(0)
 
 
 if __name__ == "__main__":
