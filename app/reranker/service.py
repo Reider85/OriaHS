@@ -105,19 +105,19 @@ class RerankerService:
         scores = np.array(scores, dtype=np.float32)
         normalized_scores = 1 / (1 + np.exp(-scores))
 
+        # Calculate inference time before creating results
+        inference_ms = int((time.time() - start_time) * 1000) if "start_time" in locals() else 0
+
         # Create results and sort by score descending
         results = [
-            RerankResult(doc_id=doc.doc_id, score=float(score))
-            for doc, score in zip(docs, normalized_scores)
+            RerankResult(doc_id=doc.doc_id, score=float(score), inference_ms=inference_ms)
+            for doc, score in zip(docs, normalized_scores, strict=True)
         ]
         results.sort(key=lambda x: -x.score)
 
         # Apply top_k limit
         if top_k is not None:
             results = results[:top_k]
-
-        # Log performance metrics and record latency metric
-        inference_ms = int((time.time() - start_time) * 1000) if "start_time" in locals() else 0
         logger.info(
             "Rerank done",
             extra={

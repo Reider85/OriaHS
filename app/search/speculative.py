@@ -74,8 +74,10 @@ class SpeculativeReranker:
         # reranking would serialise them and lose the whole point of the design.
         spec_task: asyncio.Task[list[RerankResult]] | None = None
 
+        speculative_candidates: list[RerankCandidate] | None = None
+
         def _start_speculative() -> None:
-            nonlocal spec_task
+            nonlocal spec_task, speculative_candidates
 
             # Nothing to overlap: the vector channel already finished, so the
             # full fusion rerank runs instead (and is not wasted work).
@@ -90,18 +92,18 @@ class SpeculativeReranker:
             if not hits:
                 return  # no speculative input, and no fusion rerank is wanted
 
-            candidates = self._build_candidates_from_lexical(hits[: self._config.speculative_top_n])
-            if not candidates:
+            speculative_candidates = self._build_candidates_from_lexical(hits[: self._config.speculative_top_n])
+            if not speculative_candidates:
                 return
 
             logger.info(
                 "Speculative rerank: lexical finished first",
                 extra={
-                    "speculative_count": len(candidates),
+                    "speculative_count": len(speculative_candidates),
                     "total_lexical": len(hits),
                 },
             )
-            spec_task = asyncio.ensure_future(self._rerank_candidates(query, candidates))
+            spec_task = asyncio.ensure_future(self._rerank_candidates(query, speculative_candidates))
 
         if not self._circuit_breaker.is_open():
             lex_task.add_done_callback(lambda _task: _start_speculative())
@@ -121,6 +123,26 @@ class SpeculativeReranker:
             vec_error = exc
         except Exception as exc:
             vec_error = exc
+
+        # Log remaining_count if speculative rerank happened
+        if speculative_candidates is not None and spec_task is not None and not spec_task.cancelled():
+            try:
+                # Wait for the speculative rerank to complete
+                rerank_results = await spec_task
+                speculative_doc_ids = {r.doc_id for r in rerank_results}
+                remaining_count = len(set(hit.doc_id for hit in vec_hits if hit.doc_id not in speculative_doc_ids))
+                logger.info(
+                    "Speculative rerank completed",
+                    extra={
+                        "speculative_count": len(speculative_doc_ids),
+                        "remaining_count": remaining_count,
+                        "total_lexical": len(lex_hits),
+                        "total_vector": len(vec_hits),
+                    },
+                )
+            except Exception:
+                # Speculative rerank failed, don't log remaining count
+                pass
 
         # Handle vector search failure - return empty rerank results
         if vec_error is not None:
@@ -196,13 +218,14 @@ class SpeculativeReranker:
         # Run rerank on full fusion results
         rerank_results = await self._reranker.rerank(query, fusion_candidates)
 
+        # Calculate total_rerank_ms by summing all inference_ms values
+        total_rerank_ms = sum(result.inference_ms or 0 for result in rerank_results)
+
         logger.info(
             "Fallback rerank completed",
             extra={
                 "rerank_count": len(rerank_results),
-                "total_rerank_ms": getattr(rerank_results[0], "_inference_ms", 0)
-                if rerank_results
-                else 0,
+                "total_rerank_ms": total_rerank_ms,
             },
         )
 

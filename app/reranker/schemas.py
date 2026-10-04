@@ -22,3 +22,4 @@ class RerankResult(BaseModel):
 
     doc_id: UUID
     score: float  # post-rerank score ∈ [0, 1] (sigmoid-normalized)
+    inference_ms: float | None = None  # cross-encoder inference time in milliseconds
