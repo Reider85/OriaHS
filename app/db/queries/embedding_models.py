@@ -36,3 +36,16 @@ async def get_default_model(session: AsyncSession) -> EmbeddingModel:
 
     _default_model_cache["default"] = model
     return model
+
+
+async def get_active_model_by_name(session: AsyncSession, model_name: str) -> EmbeddingModel:
+    """Return an active model by name, or raise ValueError if not found/inactive."""
+    model = await session.scalar(
+        select(EmbeddingModel).where(
+            EmbeddingModel.name == model_name,
+            EmbeddingModel.is_active.is_(True),
+        )
+    )
+    if model is None:
+        raise ValueError(f"Embedding model '{model_name}' is not active or not found")
+    return model

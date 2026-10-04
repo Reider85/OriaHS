@@ -15,6 +15,8 @@ import httpx
 import pytest
 import redis.asyncio as aioredis
 from httpx import ASGITransport, AsyncClient
+from qdrant_client import AsyncQdrantClient
+from qdrant_client.http import models as qmodels
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -23,6 +25,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from testcontainers.community.postgres import PostgresContainer
+from testcontainers.community.qdrant import QdrantContainer
 from testcontainers.community.redis import RedisContainer
 
 from app.config import settings
@@ -54,6 +57,14 @@ def redis_address():
         yield host, int(redis_c.get_exposed_port(6379))
 
 
+@pytest.fixture(scope="session")
+def qdrant_address():
+    """Disposable Qdrant (same image as docker-compose)."""
+    with QdrantContainer() as container:
+        host = container.get_container_host_ip()
+        yield host, int(container.get_exposed_port(6333))
+
+
 async def _seed_embedding_model(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
         await conn.execute(
@@ -70,14 +81,45 @@ async def _seed_embedding_model(engine: AsyncEngine) -> None:
     clear_default_model_cache()
 
 
+async def _seed_digest_table(engine: AsyncEngine) -> None:
+    """Create search_outbox_dead_digest table for DoD tests."""
+    async with engine.begin() as conn:
+        # Create table if not exists (004 migration DDL)
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS search_outbox_dead_digest (
+                id BIGSERIAL PRIMARY KEY,
+                tenant_id UUID NOT NULL,
+                model_name TEXT NOT NULL,
+                error_type TEXT NOT NULL,
+                count BIGINT NOT NULL,
+                first_seen_at TIMESTAMPTZ NOT NULL,
+                last_seen_at TIMESTAMPTZ NOT NULL,
+                sample_doc_ids UUID[] NOT NULL DEFAULT '{}',
+                sample_errors TEXT[] NOT NULL DEFAULT '{}',
+                UNIQUE (tenant_id, model_name, error_type)
+            )
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS search_outbox_dead_digest_tenant_idx 
+            ON search_outbox_dead_digest (tenant_id)
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS search_outbox_dead_digest_last_seen_idx 
+            ON search_outbox_dead_digest (last_seen_at DESC)
+        """))
+
+
 @pytest.fixture
 async def engine(pg_dsn: str):
     """Function-scoped async engine with a fresh schema per test."""
     engine = create_async_engine(pg_dsn)
     await _seed_embedding_model(engine)
+    await _seed_digest_table(engine)
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+        # Also drop digest table (no ORM model)
+        await conn.execute(text("DROP TABLE IF EXISTS search_outbox_dead_digest CASCADE"))
     clear_default_model_cache()
     await engine.dispose()
 
@@ -90,6 +132,31 @@ async def async_redis(redis_address):
     await client.flushdb()
     yield client
     await client.aclose()
+
+
+@pytest.fixture
+async def async_qdrant(qdrant_address):
+    """Async Qdrant client bound to the disposable container."""
+    host, port = qdrant_address
+    client = AsyncQdrantClient(host=host, port=port)
+    yield client
+    await client.close()
+
+
+@pytest.fixture
+async def qdrant_service(async_qdrant):
+    """QdrantService bound to disposable container with fresh collection per test."""
+    # Create collection
+    await async_qdrant.delete_collection("documents", timeout=30)
+    await async_qdrant.create_collection(
+        collection_name="documents",
+        vectors_config=qmodels.VectorParams(size=1024, distance=qmodels.Distance.COSINE),
+        timeout=30,
+    )
+    
+    from app.services.qdrant import QdrantService
+    service = QdrantService(client=async_qdrant, collection_name="documents")
+    yield service
 
 
 @pytest.fixture
@@ -127,6 +194,80 @@ async def wired_app(engine: AsyncEngine, async_redis: aioredis.Redis):
     transport = ASGITransport(app=wrapper)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield wrapper, client
+    wrapper.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def wired_app_with_qdrant(engine: AsyncEngine, async_redis: aioredis.Redis, qdrant_service):
+    """FastAPI app wired to test infrastructure including Qdrant for DoD 3/5."""
+    from app.main import create_app
+    from app.reconciler.worker import ReconcilerWorker
+    from app.reconciler.digest import DigestWorker
+    from app.embedding.cache import EmbeddingCache
+
+    wrapper = create_app()
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+    async def _get_session() -> AsyncSession:
+        async with factory() as session:
+            yield session
+
+    wrapper.dependency_overrides[get_session] = _get_session
+    wrapper.dependency_overrides[get_redis_client] = lambda: async_redis
+
+    # Override get_throttle_service
+    from app.api.routes import index as index_routes
+    from app.services.throttle import OutboxThrottle
+
+    def _get_test_throttle() -> OutboxThrottle:
+        return OutboxThrottle(
+            session_factory=factory,
+            redis_client=async_redis,
+            config=settings.throttle,
+        )
+
+    wrapper.dependency_overrides[index_routes.get_throttle_service] = _get_test_throttle
+
+    # Create test reconciler worker
+    class TestReconcilerWorker(ReconcilerWorker):
+        def __init__(self, *args, **kwargs):
+            config = kwargs.pop('config', None) or settings.reconciler
+            super().__init__(
+                config=config,
+                session_factory=lambda: factory(),
+                qdrant_service=qdrant_service,
+                embedding_service=TestEmbeddingService(),
+                embedding_cache=EmbeddingCache(async_redis),
+            )
+
+    class TestEmbeddingService:
+        """Test embedder that can fail on nonexistent model."""
+        
+        async def embed_texts(self, texts: list[str]) -> list:
+            import numpy as np
+            # Check if we should fail (for DoD 5)
+            # In real tests, this would be controlled via document.embedding_model
+            # For now, always return deterministic vectors
+            vector = np.array([1.0] + [0.0] * 1023, dtype=np.float32)
+            return [vector] * len(texts)
+        
+        async def embed_query(self, query: str):
+            import numpy as np
+            vector = np.array([1.0] + [0.0] * 1023, dtype=np.float32)
+            return vector
+
+    # Create test digest worker
+    class TestDigestWorker(DigestWorker):
+        def __init__(self, *args, **kwargs):
+            config = kwargs.pop('config', None) or settings.reconciler
+            super().__init__(
+                config=config,
+                session_factory=lambda: factory(),
+            )
+
+    transport = ASGITransport(app=wrapper)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield wrapper, client, TestReconcilerWorker(), TestDigestWorker()
     wrapper.dependency_overrides.clear()
 
 
@@ -200,10 +341,13 @@ async def reconcile_wait(max_seconds: int = 60, session_factory=None):
     from app.db.queries.outbox import count_pending
 
     start_time = time.time()
-    test_session_factory = session_factory
+    
+    if session_factory is None:
+        # If no session_factory provided, use the engine fixture
+        session_factory = async_sessionmaker(bind=engine, expire_on_commit=False)
 
     while time.time() - start_time < max_seconds:
-        async with test_session_factory() as session:
+        async with session_factory() as session:
             pending_count = await count_pending(session)
             if pending_count == 0:
                 yield

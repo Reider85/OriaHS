@@ -25,6 +25,7 @@ from app.db.models import Document
 from app.db.queries import documents as documents_queries
 from app.db.queries import outbox as outbox_queries
 from app.db.queries.outbox import PendingOutboxRow
+from app.db.queries.embedding_models import get_active_model_by_name
 from app.db.redis_client import get_redis_client
 from app.db.session import async_session_factory
 from app.embedding.cache import EmbeddingCache, should_skip_upsert
@@ -217,6 +218,9 @@ class ReconcilerWorker:
         document = await documents_queries.get_by_id(session, row.document_id)
         if document is None:
             raise ValueError(f"Document {row.document_id} not found for outbox row {row.id}")
+
+        # Validate embedding model exists and is active
+        await get_active_model_by_name(session, document.embedding_model)
 
         target_hash = row.content_hash or document.content_hash
         existing_hash = await self._qdrant.get_point_content_hash(row.document_id)

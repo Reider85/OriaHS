@@ -266,7 +266,7 @@ class TestOutboxThrottle:
         # Mock database error
         async_context_manager = mock_session_factory()
         session = async_context_manager.session
-        session.execute.side_effect = Exception("Database connection failed")
+        session.execute.side_effect = ConnectionError("Database connection failed")
 
-        with pytest.raises(Exception):
+        with pytest.raises(ConnectionError):
             await throttle.get_pending_count()

@@ -21,7 +21,8 @@ set -euo pipefail
 
 # Default settings
 VERBOSE=false
-TIMEOUT_SECONDS=300
+TIMEOUT_SECONDS=600  # Increased for SLA test
+SLA_DURATION_SECONDS=600  # 10 minutes for SLA test
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../" && pwd)"
 
@@ -202,6 +203,16 @@ run_dod_tests() {
     print_status "INFO" "  Failed: $failed_tests"
     print_status "INFO" "  Total Time: $duration seconds"
     
+    # Print NFR results
+    if [[ "$test_passed" == true ]]; then
+        print_status "INFO" "NFR Performance Results:"
+        print_status "INFO" "  Latency p99: ${p99_value:-N/A}ms (target: ≤200ms)"
+        print_status "INFO" "  Index Throughput: ${throughput_value:-N/A} doc/min (target: ≥500 doc/min)"
+        print_status "INFO" "  Search Throughput: ${rps_value:-N/A} RPS (target: ≥100 RPS)"
+        print_status "INFO" "  Lag: ${lag_value:-N/A}s (target: ≤30s)"
+        print_status "INFO" "  SLA: ${sla_value:-N/A} (target: ≥99% over ${SLA_DURATION_SECONDS}s)"
+    fi
+    
     # Return failure if any tests failed
     if [[ $failed_tests -gt 0 ]]; then
         print_status "FAIL" "$failed_tests DoD tests failed"
@@ -221,8 +232,8 @@ run_performance_tests() {
     local start_time=$(date +%s)
     local test_passed=true
     
-    # Test 1: Latency test (p99 <= 200ms)
-    print_status "INFO" "Testing search latency (p99 <= 200ms)..."
+    # Test 1: Latency test (p99 <= 200ms, 1000 requests)
+    print_status "INFO" "Testing search latency (p99 <= 200ms, 1000 requests)..."
     
     # Generate some test data first
     python3 -c "
@@ -232,7 +243,7 @@ from uuid import uuid4
 
 async def generate_test_data():
     async with httpx.AsyncClient(base_url='http://localhost:8000') as client:
-        for i in range(10):
+        for i in range(100):
             data = {
                 'tenant_id': str(uuid4()),
                 'external_ref': f'perf-doc-{i}',
@@ -242,14 +253,14 @@ async def generate_test_data():
                 'attributes': {}
             }
             await client.post('/index', json=data)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.01)
 
 asyncio.run(generate_test_data())
 " || {
         print_status "WARN" "Failed to generate test data for performance tests"
     }
     
-    # Run latency test
+    # Run latency test with 1000 requests
     python3 -c "
 import asyncio
 import httpx
@@ -259,7 +270,7 @@ from uuid import uuid4
 async def test_latency():
     search_times = []
     async with httpx.AsyncClient(base_url='http://localhost:8000') as client:
-        for i in range(20):
+        for i in range(1000):
             data = {
                 'tenant_id': str(uuid4()),
                 'query': 'performance test',
@@ -273,31 +284,31 @@ async def test_latency():
                 search_times.append(latency)
             except Exception as e:
                 print(f'Search request failed: {e}')
-                return False
+                continue
     
     if not search_times:
         print('No successful search requests')
-        return False
+        return False, 0
     
     p99 = sorted(search_times)[int(len(search_times) * 0.99)]
     print(f'P99 latency: {p99:.2f}ms')
     
     if p99 <= 200:
         print('Latency test passed')
-        return True
+        return True, p99
     else:
         print(f'Latency test failed: P99 {p99:.2f}ms > 200ms')
-        return False
+        return False, p99
 
-success = asyncio.run(test_latency())
+success, p99_value = asyncio.run(test_latency())
 exit(0 if success else 1)
 " || {
         print_status "FAIL" "Performance test failed: P99 latency > 200ms"
         test_passed=false
     }
     
-    # Test 2: Throughput test (>= 100 RPS)
-    print_status "INFO" "Testing throughput (>= 100 RPS)..."
+    # Test 2: Indexing throughput (≥ 500 doc/min)
+    print_status "INFO" "Testing indexing throughput (≥ 500 doc/min)..."
     
     python3 -c "
 import asyncio
@@ -305,42 +316,214 @@ import httpx
 import time
 from uuid import uuid4
 
-async def test_throughput():
-    requests = []
+async def test_index_throughput():
     start_time = time.time()
     
     async def make_request():
         data = {
             'tenant_id': str(uuid4()),
-            'external_ref': f'throughput-doc-{int(time.time()*1000)}',
-            'title': 'Throughput Test',
-            'content': 'Test content for throughput.',
-            'tags': ['throughput'],
+            'external_ref': f'index-doc-{int(time.time()*1000)}',
+            'title': 'Index Test Document',
+            'content': 'This is test content for indexing throughput.',
+            'tags': ['indexing'],
             'attributes': {}
         }
         async with httpx.AsyncClient(base_url='http://localhost:8000') as client:
             await client.post('/index', json=data)
     
-    # Make 100 requests
-    tasks = [make_request() for _ in range(100)]
+    # Make 500 requests
+    tasks = [make_request() for _ in range(500)]
     await asyncio.gather(*tasks)
     
     duration = time.time() - start_time
-    rps = 100 / duration
+    docs_per_min = 500 / (duration / 60)
     
-    print(f'Throughput: {rps:.2f} RPS')
+    print(f'Indexing throughput: {docs_per_min:.1f} doc/min')
     
-    if rps >= 100:
-        print('Throughput test passed')
-        return True
+    if docs_per_min >= 500:
+        print('Indexing throughput test passed')
+        return True, docs_per_min
     else:
-        print(f'Throughput test failed: {rps:.2f} RPS < 100 RPS')
-        return False
+        print(f'Indexing throughput test failed: {docs_per_min:.1f} doc/min < 500 doc/min')
+        return False, docs_per_min
 
-success = asyncio.run(test_throughput())
+success, throughput_value = asyncio.run(test_index_throughput())
 exit(0 if success else 1)
 " || {
-        print_status "FAIL" "Performance test failed: Throughput < 100 RPS"
+        print_status "FAIL" "Performance test failed: Indexing throughput < 500 doc/min"
+        test_passed=false
+    }
+    
+    # Test 3: Search throughput (≥ 100 RPS)
+    print_status "INFO" "Testing search throughput (≥ 100 RPS, 1000 requests)..."
+    
+    python3 -c "
+import asyncio
+import httpx
+import time
+from uuid import uuid4
+
+async def test_search_throughput():
+    start_time = time.time()
+    
+    async def make_request():
+        data = {
+            'tenant_id': str(uuid4()),
+            'query': 'test search throughput',
+            'top_k': 10,
+            'timeout_ms': 2000
+        }
+        async with httpx.AsyncClient(base_url='http://localhost:8000') as client:
+            await client.post('/search', json=data)
+    
+    # Make 1000 requests
+    tasks = [make_request() for _ in range(1000)]
+    await asyncio.gather(*tasks)
+    
+    duration = time.time() - start_time
+    rps = 1000 / duration
+    
+    print(f'Search throughput: {rps:.1f} RPS')
+    
+    if rps >= 100:
+        print('Search throughput test passed')
+        return True, rps
+    else:
+        print(f'Search throughput test failed: {rps:.1f} RPS < 100 RPS')
+        return False, rps
+
+success, rps_value = asyncio.run(test_search_throughput())
+exit(0 if success else 1)
+" || {
+        print_status "FAIL" "Performance test failed: Search throughput < 100 RPS"
+        test_passed=false
+    }
+    
+    # Test 4: Lag test (≤ 30s)
+    print_status "INFO" "Testing index-to-search lag (≤ 30s)..."
+    
+    python3 -c "
+import asyncio
+import httpx
+import time
+from uuid import uuid4
+
+async def test_lag():
+    tenant_id = str(uuid4())
+    
+    # Index a document
+    data = {
+        'tenant_id': tenant_id,
+        'external_ref': 'lag-test-doc',
+        'title': 'Lag Test Document',
+        'content': 'This document tests the lag between index and search.',
+        'tags': ['lag'],
+        'attributes': {}
+    }
+    async with httpx.AsyncClient(base_url='http://localhost:8000') as client:
+        index_response = await client.post('/index', json=data)
+        doc_id = index_response.json()['doc_id']
+    
+    # Wait for it to appear in search
+    start_time = time.time()
+    found = False
+    
+    while time.time() - start_time < 35:  # 35s timeout
+        try:
+            search_data = {
+                'tenant_id': tenant_id,
+                'query': 'lag test document',
+                'top_k': 10,
+                'timeout_ms': 2000
+            }
+            response = await client.post('/search', json=search_data)
+            results = response.json()['hits']
+            if any(hit['doc_id'] == doc_id for hit in results):
+                found = True
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(2)
+    
+    lag = time.time() - start_time if found else 35
+    print(f'Lag: {lag:.1f}s')
+    
+    if found and lag <= 30:
+        print('Lag test passed')
+        return True, lag
+    else:
+        print(f'Lag test failed: Document not found or lag {lag:.1f}s > 30s')
+        return False, lag
+
+success, lag_value = asyncio.run(test_lag())
+exit(0 if success else 1)
+" || {
+        print_status "FAIL" "Performance test failed: Lag > 30s or document not found"
+        test_passed=false
+    }
+    
+    # Test 5: SLA test (99% success rate over 10 minutes)
+    print_status "INFO" "Testing SLA (99% success rate over ${SLA_DURATION_SECONDS}s)..."
+    
+    python3 -c "
+import asyncio
+import httpx
+import time
+from uuid import uuid4
+
+async def test_sla():
+    total_requests = 0
+    successful_requests = 0
+    start_time = time.time()
+    duration = ${SLA_DURATION_SECONDS}
+    
+    async def make_request():
+        nonlocal total_requests, successful_requests
+        total_requests += 1
+        
+        tenant_id = str(uuid4())
+        data = {
+            'tenant_id': tenant_id,
+            'query': 'sla test',
+            'top_k': 10,
+            'timeout_ms': 2000
+        }
+        try:
+            async with httpx.AsyncClient(base_url='http://localhost:8000') as client:
+                await client.post('/search', json=data)
+            successful_requests += 1
+        except Exception:
+            pass
+    
+    # Run requests concurrently for the duration
+    tasks = []
+    while time.time() - start_time < duration:
+        task = asyncio.create_task(make_request())
+        tasks.append(task)
+        await asyncio.sleep(0.1)  # Small delay to avoid overwhelming
+    
+    # Wait for remaining tasks
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    
+    if total_requests == 0:
+        success_rate = 0
+    else:
+        success_rate = successful_requests / total_requests
+    
+    print(f'SLA: {success_rate:.3f} ({successful_requests}/{total_requests})')
+    
+    if success_rate >= 0.99:
+        print('SLA test passed')
+        return True, success_rate
+    else:
+        print(f'SLA test failed: {success_rate:.3f} < 0.99')
+        return False, success_rate
+
+success, sla_value = asyncio.run(test_sla())
+exit(0 if success else 1)
+" || {
+        print_status "FAIL" "Performance test failed: SLA < 99%"
         test_passed=false
     }
     

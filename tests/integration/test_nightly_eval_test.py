@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+
 from app.api.schemas import SearchHit, SearchResponse
 from app.config import AppConfig, EvalConfig, SearchConfig
 from app.db.queries import eval as eval_queries
@@ -116,14 +117,14 @@ class TestNightlyEvalJob:
         """Test running eval with RRF strategy."""
         # Mock the dataset loading
         monkeypatch.setattr("app.eval.nightly.load_dataset", lambda _path: eval_queries_data)
-    
+
         # Mock the database operations
         mock_session = AsyncMock()
         eval_job._session_factory = MagicMock(return_value=mock_session)
         eval_queries.register_dataset = AsyncMock()
         eval_queries.save_result = AsyncMock()
         eval_queries.get_baseline = AsyncMock(return_value=None)
-        
+
 # Mock the orchestrator to return relevant docs for both queries
         def mock_search(request):
             if "test query 1" in request.query:
@@ -174,22 +175,22 @@ class TestNightlyEvalJob:
                     degraded=False,
                     partial=False,
                 )
-        
+
         # Mock the orchestrator creation and search method
         orchestrator_mock = AsyncMock()
         orchestrator_mock.search = AsyncMock(side_effect=mock_search)
         monkeypatch.setattr(eval_job, "_orchestrator", orchestrator_mock)
-    
+
         # Run the evaluation
         report = await eval_job.run()
-    
+
         # Verify results
         assert isinstance(report, EvalReport)
         assert "rrf" in report.strategies
         assert report.strategies["rrf"]["recall_at_10"] == 1.0  # Both relevant docs retrieved for both queries
         assert report.strategies["rrf"]["ndcg_at_10"] > 0
         assert report.strategies["rrf"]["mrr"] == 1.0  # q001: doc1 rank1 (1.0), q002: doc2 rank1 (1.0) → avg 1.0
-    
+
         # Verify orchestrator was called for each query and strategy
         assert eval_job._orchestrator.search.call_count == 6  # 2 queries × 3 strategies
 
@@ -198,14 +199,14 @@ class TestNightlyEvalJob:
         """Test running eval with weighted strategy."""
         # Mock the dataset loading
         monkeypatch.setattr("app.eval.nightly.load_dataset", lambda _path: eval_queries_data)
-    
+
         # Mock the database operations
         mock_session = AsyncMock()
         eval_job._session_factory = MagicMock(return_value=mock_session)
         eval_queries.register_dataset = AsyncMock()
         eval_queries.save_result = AsyncMock()
         eval_queries.get_baseline = AsyncMock(return_value=None)
-    
+
         # Mock the orchestrator to return a different response for weighted
         mock_response = SearchResponse(
             hits=[
@@ -230,15 +231,15 @@ class TestNightlyEvalJob:
             degraded=False,
             partial=False,
         )
-        
+
         # Mock the orchestrator creation and search method
         orchestrator_mock = AsyncMock()
         orchestrator_mock.search = AsyncMock(return_value=mock_response)
         monkeypatch.setattr(eval_job, "_orchestrator", orchestrator_mock)
-    
+
         # Run the evaluation
         report = await eval_job.run()
-    
+
         # Verify results
         assert "weighted" in report.strategies
         assert report.strategies["weighted"]["recall_at_10"] == 0.75  # q001: both retrieved (1.0), q002: doc2 only (0.5) → avg 0.75
@@ -249,7 +250,7 @@ class TestNightlyEvalJob:
         """Test regression detection against baseline."""
         # Mock the dataset loading
         monkeypatch.setattr("app.eval.nightly.load_dataset", lambda _path: eval_queries_data)
-    
+
         # Mock search to return irrelevant docs (causing low recall)
         irrelevant1 = uuid4()
         irrelevant2 = uuid4()
@@ -277,23 +278,23 @@ class TestNightlyEvalJob:
             partial=False,
         )
         eval_job._orchestrator.search = AsyncMock(return_value=mock_irrelevant_response)
-    
+
         # Mock the database operations
         mock_session = AsyncMock()
         eval_job._session_factory = MagicMock(return_value=mock_session)
         eval_queries.register_dataset = AsyncMock()
         eval_queries.save_result = AsyncMock()
-    
+
         # Mock baseline with better recall
         baseline_result = MagicMock()
         baseline_result.recall_at_10 = 0.8
         baseline_result.ndcg_at_10 = 0.7
         baseline_result.mrr = 0.6
         eval_queries.get_baseline = AsyncMock(return_value=baseline_result)
-    
+
         # Run the evaluation
         report = await eval_job.run()
-    
+
         # Should detect regression (current recall=0.5 < baseline=0.8)
         assert report.regression_detected
         assert "rrf" in report.regressions
@@ -304,20 +305,20 @@ class TestNightlyEvalJob:
         """Test no regression when current is better than baseline."""
         # Mock the dataset loading
         monkeypatch.setattr("app.eval.nightly.load_dataset", lambda _path: eval_queries_data)
-    
+
         # Mock the database operations
         mock_session = AsyncMock()
         eval_job._session_factory = MagicMock(return_value=mock_session)
         eval_queries.register_dataset = AsyncMock()
         eval_queries.save_result = AsyncMock()
-    
+
         # Mock baseline with worse recall
         baseline_result = MagicMock()
         baseline_result.recall_at_10 = 0.3
         baseline_result.ndcg_at_10 = 0.2
         baseline_result.mrr = 0.1
         eval_queries.get_baseline = AsyncMock(return_value=baseline_result)
-    
+
         # Mock the orchestrator to return relevant docs for both queries
         def mock_search(request):
             if "test query 1" in request.query:
@@ -368,15 +369,15 @@ class TestNightlyEvalJob:
                     degraded=False,
                     partial=False,
                 )
-        
+
         # Mock the orchestrator creation and search method
         orchestrator_mock = AsyncMock()
         orchestrator_mock.search = AsyncMock(side_effect=mock_search)
         monkeypatch.setattr(eval_job, "_orchestrator", orchestrator_mock)
-    
+
         # Run the evaluation
         report = await eval_job.run()
-    
+
         # Should not detect regression
         assert not report.regression_detected
         assert len(report.regressions) == 0
@@ -386,17 +387,17 @@ class TestNightlyEvalJob:
         """Test no regression when no baseline exists."""
         # Mock the dataset loading
         monkeypatch.setattr("app.eval.nightly.load_dataset", lambda _path: eval_queries_data)
-    
+
         # Mock the database operations
         mock_session = AsyncMock()
         eval_job._session_factory = MagicMock(return_value=mock_session)
         eval_queries.register_dataset = AsyncMock()
         eval_queries.save_result = AsyncMock()
         eval_queries.get_baseline = AsyncMock(return_value=None)
-    
+
         # Run the evaluation
         report = await eval_job.run()
-    
+
         # Should not detect regression (no baseline to compare against)
         assert not report.regression_detected
         assert len(report.regressions) == 0
@@ -406,14 +407,14 @@ class TestNightlyEvalJob:
         """Test handling of query evaluation failures."""
         # Mock the dataset loading
         monkeypatch.setattr("app.eval.nightly.load_dataset", lambda _path: eval_queries_data)
-    
+
         # Mock the database operations
         mock_session = AsyncMock()
         eval_job._session_factory = MagicMock(return_value=mock_session)
         eval_queries.register_dataset = AsyncMock()
         eval_queries.save_result = AsyncMock()
         eval_queries.get_baseline = AsyncMock(return_value=None)
-    
+
         # Make one query succeed (with both relevant docs), one fail
         mock_response_success = SearchResponse(
             hits=[
@@ -438,7 +439,7 @@ class TestNightlyEvalJob:
             degraded=False,
             partial=False,
         )
-        
+
         # Mock the orchestrator creation and search method with side effect
         orchestrator_mock = AsyncMock()
         orchestrator_mock.search.side_effect = [
@@ -446,10 +447,10 @@ class TestNightlyEvalJob:
             Exception("Query failed"),
         ]
         monkeypatch.setattr(eval_job, "_orchestrator", orchestrator_mock)
-    
+
         # Run the evaluation
         report = await eval_job.run()
-    
+
         # Should still complete but with lower metrics due to failure
         assert isinstance(report, EvalReport)
         assert report.queries_processed == 2

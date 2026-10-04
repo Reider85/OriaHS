@@ -107,14 +107,14 @@ class TestDegradedMode:
                     vec_done=True,
                 )
             ),
-        ) as mock_pipeline:
+        ):
             result = await orchestrator.search(search_request)
 
             # Verify vector channel was skipped
             assert result.total_vector == 0
             assert result.total_lexical == len(mock_lexical_hits)
-            assert result.degraded == True
-            assert result.partial == False
+            assert result.degraded
+            assert not result.partial
 
             # Verify metric was incremented
             assert metrics.search_degraded_total.labels(reason="vector_disabled")._value.get() > 0
@@ -138,14 +138,14 @@ class TestDegradedMode:
                     vec_done=True,
                 )
             ),
-        ) as mock_pipeline:
+        ):
             result = await orchestrator.search(search_request)
 
             # Verify vector channel was skipped due to health check
             assert result.total_vector == 0
             assert result.total_lexical == len(mock_lexical_hits)
-            assert result.degraded == True
-            assert result.partial == False
+            assert result.degraded
+            assert not result.partial
 
             # Verify metric was incremented
             assert (
@@ -171,12 +171,12 @@ class TestDegradedMode:
                     partial=True,  # Deadline exceeded
                 )
             ),
-        ) as mock_pipeline:
+        ):
             result = await orchestrator.search(search_request)
 
             # Verify partial results
-            assert result.partial == True
-            assert result.degraded == True
+            assert result.partial
+            assert result.degraded
             assert result.total_lexical == len(mock_lexical_hits)
 
             # search_degraded_total инкрементится в _resolve_degraded (не
@@ -201,7 +201,7 @@ class TestDegradedMode:
                     partial=True,
                 )
             ),
-        ) as mock_pipeline:
+        ):
             with pytest.raises(TimeoutError):
                 await orchestrator.search(search_request)
 
@@ -231,14 +231,14 @@ class TestDegradedMode:
                     vec_done=True,
                 )
             ),
-        ) as mock_pipeline:
+        ):
             result = await orchestrator.search(search_request)
 
             # Verify both channels worked
             assert result.total_lexical == len(mock_lexical_hits)
             assert result.total_vector == len(mock_vector_hits)
-            assert result.degraded == False
-            assert result.partial == False
+            assert not result.degraded
+            assert not result.partial
 
             # Verify degraded/partial metrics were not touched by this request
             for reason in reasons:
@@ -265,11 +265,11 @@ class TestDegradedMode:
                     vec_error=QdrantUnavailableError("Qdrant failed"),
                 )
             ),
-        ) as mock_pipeline:
+        ):
             result = await orchestrator.search(search_request)
 
             # Verify degraded mode was triggered
             assert result.total_vector == 0
             assert result.total_lexical == len(mock_lexical_hits)
-            assert result.degraded == True
-            assert result.partial == False
+            assert result.degraded
+            assert not result.partial
