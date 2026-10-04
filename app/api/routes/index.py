@@ -18,10 +18,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import IndexRequest, IndexResponse, IndexStatusResponse
-from app.db.session import get_session
 from app.db.queries import outbox
 from app.db.redis_client import get_redis_client
-from app.db.session import async_session_factory
+from app.db.session import async_session_factory, get_session
 from app.services.indexing import IndexingService
 from app.services.throttle import OutboxThrottle
 

@@ -24,8 +24,8 @@ from app.config import ReconcilerConfig, settings
 from app.db.models import Document
 from app.db.queries import documents as documents_queries
 from app.db.queries import outbox as outbox_queries
-from app.db.queries.outbox import PendingOutboxRow
 from app.db.queries.embedding_models import get_active_model_by_name
+from app.db.queries.outbox import PendingOutboxRow
 from app.db.redis_client import get_redis_client
 from app.db.session import async_session_factory
 from app.embedding.cache import EmbeddingCache, should_skip_upsert
