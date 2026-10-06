@@ -71,11 +71,11 @@ function Invoke-Docker {
 # (nightly/tools) не должны остаться висеть после остановки.
 function Invoke-ComposeAll {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$ComposeArgs)
-    $all = @(
+    $all = (
         "compose", "--project-directory", $script:ProjectRoot, "-f", $ComposeFile,
         "--profile", "app", "--profile", "tools", "--profile", "nightly"
     )
-    $result = Invoke-Docker ($all + $ComposeArgs)
+    $result = Invoke-Docker @all @ComposeArgs
     foreach ($line in $result.Output) { Write-Host $line }
     return $result.Code
 }
@@ -150,7 +150,7 @@ function Invoke-Downgrade {
         "compose", "--project-directory", $script:ProjectRoot, "-f", $ComposeFile,
         "ps", "-q", "postgres"
     )
-    $pgRunning = (((Invoke-Docker $psArgs).Output) -join "").Trim()
+    $pgRunning = (((Invoke-Docker @psArgs).Output) -join "").Trim()
     if (-not $pgRunning) {
         Write-Status "WARN" "postgres container is not running - cannot downgrade; run 'alembic downgrade base' manually if the schema matters"
         return
@@ -160,7 +160,7 @@ function Invoke-Downgrade {
         "compose", "--project-directory", $script:ProjectRoot, "-f", $ComposeFile,
         "run", "--rm", "migrate", "alembic", "downgrade", "base"
     )
-    $result = Invoke-Docker $runArgs
+    $result = Invoke-Docker @runArgs
     foreach ($line in $result.Output) { Write-Host $line }
     if ($result.Code -eq 0) {
         Write-Status "PASS" "schema is at base (001..005 rolled back; PG extensions kept by design)"
@@ -174,7 +174,7 @@ function Stop-Stack {
     Write-Status "STEP" "Stopping containers"
     $downArgs = @("down", "--timeout", "$TimeoutSeconds")
     if (-not $NoRemoveOrphans) { $downArgs += "--remove-orphans" }
-    if ((Invoke-ComposeAll $downArgs) -ne 0) {
+    if ((Invoke-ComposeAll @downArgs) -ne 0) {
         Write-Status "FAIL" "docker compose down failed"
         exit 1
     }
@@ -189,7 +189,7 @@ function Remove-Volumes {
     Write-Status "STEP" "Removing volumes"
     $downArgs = @("down", "--volumes", "--timeout", "$TimeoutSeconds")
     if (-not $NoRemoveOrphans) { $downArgs += "--remove-orphans" }
-    if ((Invoke-ComposeAll $downArgs) -ne 0) {
+    if ((Invoke-ComposeAll @downArgs) -ne 0) {
         Write-Status "FAIL" "could not remove volumes"
         exit 1
     }

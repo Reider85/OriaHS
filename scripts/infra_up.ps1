@@ -84,7 +84,7 @@ function Invoke-Compose {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$ComposeArgs)
     $all = @("compose", "--project-directory", $script:ProjectRoot, "-f", $ComposeFile)
     if ($script:WithApp) { $all += @("--profile", "app") }
-    $result = Invoke-Docker ($all + $ComposeArgs)
+    $result = Invoke-Docker @all @ComposeArgs
     foreach ($line in $result.Output) { Write-Host $line }
     return $result.Code
 }
@@ -93,7 +93,7 @@ function Invoke-ComposeRaw {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$ComposeArgs)
     $all = @("compose", "--project-directory", $script:ProjectRoot, "-f", $ComposeFile)
     $all += $ComposeArgs
-    return Invoke-Docker $all
+    return Invoke-Docker @all
 }
 
 # Значение переменной из .env (без «питоновских» хрупких конструкций).
@@ -207,7 +207,8 @@ function Start-Containers {
 
     # one-shot jobs (migrate / init-qdrant) исключены намеренно: они
     # запускаются ниже отдельными шагами, чтобы их вывод был виден.
-    if ((Invoke-Compose (@("up", "-d", "--remove-orphans") + $services)) -ne 0) { exit 1 }
+    $upArgs = @("up", "-d", "--remove-orphans") + $services
+    if ((Invoke-Compose @upArgs) -ne 0) { exit 1 }
     Write-Status "PASS" "containers started: $($services -join ', ')"
 }
 
@@ -293,7 +294,7 @@ function Initialize-Qdrant {
 function Invoke-SeedEval {
     if (-not $SeedEval) { return }
     Write-Status "STEP" "Seeding eval corpus (C-07)"
-    if ((Invoke-Compose "run" "--rm" "seed-eval") -ne 0) {
+    if ((Invoke-ComposeRaw "--profile", "tools", "run", "--rm", "seed-eval") -ne 0) {
         Write-Status "FAIL" "seed_eval_corpus.py failed"
         exit 1
     }
