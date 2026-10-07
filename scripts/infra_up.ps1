@@ -252,20 +252,19 @@ function New-PgExtensions {
     $pgDb = Get-EnvValue "POSTGRES_DB" "orlahs"
 
     # vector нет ни в одной миграции (001 создаёт только pg_trgm/pgcrypto).
-    $result = Invoke-ComposeRaw @(
-        "exec", "-T", "postgres",
-        "psql", "-v", "ON_ERROR_STOP=1", "-U", $pgUser, "-d", $pgDb,
-        "-c", "CREATE EXTENSION IF NOT EXISTS vector;",
-        "-c", "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
-        "-c", "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
-    )
-    if ($result.Code -eq 0) {
-        Write-Status "PASS" "vector, pg_trgm, pgcrypto available"
-    } else {
-        foreach ($line in $result.Output) { Write-Host $line }
-        Write-Status "FAIL" "could not create PostgreSQL extensions"
-        exit 1
-    }
+    # Используем отдельные вызовы для каждого расширения, чтобы избежать проблем с ';' в массиве
+    $extensions = @("vector", "pg_trgm", "pgcrypto")
+    
+    foreach ($ext in $extensions) {
+        $cmd = "docker compose --project-directory $script:ProjectRoot -f $ComposeFile exec -T postgres psql -v ON_ERROR_STOP=1 -U $pgUser -d $pgDb -c `"CREATE EXTENSION IF NOT EXISTS $ext;`""
+        Write-Command $cmd
+        $result = Invoke-Expression $cmd
+        if ($LASTEXITCODE -ne 0) {
+            Write-Status "FAIL" "failed to create extension $ext"
+            exit 1
+        }
+}
+    Write-Status "PASS" "vector, pg_trgm, pgcrypto available"
 }
 
 # --- 5. миграции -------------------------------------------------------------
