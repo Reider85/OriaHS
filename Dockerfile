@@ -10,10 +10,11 @@
 ARG PYTHON_VERSION=3.12
 # Версия uv обязана совпадать с хостовой: uv.lock помечен `revision = 3`,
 # старые uv его не читают и падают на --frozen.
-ARG UV_VERSION=0.12.19
 
 # ---------- builder: зависимости ----------
 FROM python:${PYTHON_VERSION}-slim AS builder
+
+ARG UV_VERSION=0.12.19
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
