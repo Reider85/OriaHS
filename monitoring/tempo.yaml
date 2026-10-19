@@ -1,0 +1,23 @@
+# Tempo distributed tracing configuration
+# For development - single-binary mode with local storage
+
+storage:
+  traces:
+    backend: local
+    wal:
+      path: /tmp/tempo/wal
+    block:
+      frontend: native
+      backend: local
+      wal:
+        path: /tmp/tempo/wal
+      local:
+        path: /tmp/tempo/blocks
+
+server:
+  http_listen_port: 3200
+
+query:
+  frontend:
+    max_samples: 10000
+    max_bytes_per_trace: 5242880

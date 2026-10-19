@@ -14,6 +14,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.search.filters import SearchFilters
 
 
+class SearchContext(BaseModel):
+    """Search context for personalization (ARCHITECT §10.6)."""
+
+    device: Literal["desktop", "mobile", "tablet"] | None = None
+    session_id: str | None = None
+    time_of_day: Literal["morning", "afternoon", "evening", "night"] | None = None
+
+
 class IndexRequest(BaseModel):
     """Body of ``POST /index`` (ARCHITECT §14.2)."""
 
@@ -72,8 +80,8 @@ class SearchRequest(BaseModel):
     fields (e.g., ``["tags", "attributes.category"]``). If ``None``, no facets
     are computed to save resources.
 
-    Fields deferred to Production-Ready are omitted: ``personalize``,
-    ``diversify``, ``experiment_id``, ``context``.
+    Production-Ready fields added: ``personalize``, ``diversify``,
+    ``experiment_id``, ``context``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -90,6 +98,10 @@ class SearchRequest(BaseModel):
     timeout_ms: int = Field(200, ge=50, le=2000)
     facets: list[str] | None = None  # list of fields to facet: ["tags", "attributes.category"]
     facet_top_n: int = Field(20, ge=1, le=100)  # max buckets per facet field
+    personalize: bool = False  # apply user personalization (PR-01)
+    diversify: bool = False  # apply MMR diversification (PR-04)
+    experiment_id: str | None = None  # A/B experiment identifier (PR-03)
+    context: SearchContext | None = None  # search context (PR-05)
 
 
 class SearchHit(BaseModel):
@@ -151,3 +163,4 @@ class SearchResponse(BaseModel):
     latency_ms: int
     degraded: bool = False
     partial: bool = False
+    variant: str | None = None  # shadow traffic variant identifier (PR-08)

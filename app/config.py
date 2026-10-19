@@ -169,16 +169,136 @@ class ThrottleConfig(BaseSettings):
     pending_reindex_threshold: int = Field(default=100000, ge=1)
 
 
+class PersonalizationConfig(BaseSettings):
+    """Personalization configuration (EMA profile vectors, cold-start, GDPR)."""
+
+    model_config = SettingsConfigDict(env_prefix="PERSONALIZATION_", env_file=".env", extra="ignore")
+
+    ema_alpha_new: float = 0.5
+    ema_alpha_established: float = 0.05
+    new_user_click_threshold: int = 10
+    profile_weight: float = 0.3
+    fused_weight: float = 0.7
+    cold_start_enabled: bool = True
+    profile_dimension: int = 1024
+    gdpr_delete_endpoint_enabled: bool = True
+
+
+class ABTestingConfig(BaseSettings):
+    """A/B testing configuration (sticky distribution, sequential testing)."""
+
+    model_config = SettingsConfigDict(env_prefix="AB_TESTING_", env_file=".env", extra="ignore")
+
+    sticky_hash_buckets: int = 1000
+    sequential_testing_enabled: bool = True
+    significance_level: float = 0.05
+    min_samples_per_variant: int = 100
+    max_parallel_experiments: int = 3
+
+
+class TracingConfig(BaseSettings):
+    """Distributed tracing OpenTelemetry configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="TRACING_", env_file=".env", extra="ignore")
+
+    otel_endpoint: str = "http://otel-collector:4317"
+    service_name: str = "oriahs"
+    export_interval_ms: int = 5000
+    sample_rate: float = 1.0
+
+
+class MigrationConfig(BaseSettings):
+    """Embedding model migration framework configuration (blue-green, backfill, canary)."""
+
+    model_config = SettingsConfigDict(env_prefix="MIGRATION_", env_file=".env", extra="ignore")
+
+    backfill_batch_size: int = 1000
+    backfill_speed_doc_per_hour: int = 50000
+    canary_percentage: float = 0.01
+    canary_min_similarity: float = 0.6
+    canary_max_similarity: float = 0.95
+    snapshot_retention_days: int = 30
+    snapshot_s3_bucket: str = "oriahs-qdrant-snapshots"
+    rollback_timeout_minutes: int = 30
+
+
+class ShadowTrafficConfig(BaseSettings):
+    """Shadow traffic configuration (parallel strategy evaluation)."""
+
+    model_config = SettingsConfigDict(env_prefix="SHADOW_", env_file=".env", extra="ignore")
+
+    enabled: bool = False
+    strategies: list[str] = []
+    log_variant: bool = True
+
+
+class ChaosConfig(BaseSettings):
+    """Chaos engineering configuration (weekly experiments)."""
+
+    model_config = SettingsConfigDict(env_prefix="CHAOS_", env_file=".env", extra="ignore")
+
+    schedule_cron: str = "0 6 * * 0"
+    environment: str = "staging"
+    qdrant_kill_seconds: int = 60
+    reranker_delay_ms: int = 1000
+    redis_fill_percentage: float = 0.95
+
+
+class AdaptiveKConfig(BaseSettings):
+    """Adaptive K configuration per tenant statistics."""
+
+    model_config = SettingsConfigDict(env_prefix="ADAPTIVE_K_", env_file=".env", extra="ignore")
+
+    small_tenant_doc_threshold: int = 10000
+    large_tenant_doc_threshold: int = 1000000
+    short_query_len_threshold: int = 5
+    long_query_len_threshold: int = 20
+    k_small: int = 30
+    k_large: int = 100
+
+
+class IncrementalFacetsConfig(BaseSettings):
+    """Incremental facets configuration (Redis cache)."""
+
+    model_config = SettingsConfigDict(env_prefix="INCREMENTAL_FACETS_", env_file=".env", extra="ignore")
+
+    cache_ttl_seconds: int = 600
+    cache_key_prefix: str = "facets"
+
+
+class NegativeCacheConfig(BaseSettings):
+    """Negative cache configuration for embeddings."""
+
+    model_config = SettingsConfigDict(env_prefix="NEGATIVE_CACHE_", env_file=".env", extra="ignore")
+
+    null_ttl_seconds: int = 60
+    enabled: bool = True
+
+
 class FeatureFlags(BaseSettings):
-    """Feature flags for Critical phase components (ARCHITECT §17.2)."""
+    """Feature flags for Critical and Production-Ready phase components (ARCHITECT §17.2)."""
 
     model_config = SettingsConfigDict(env_prefix="", env_file=".env", extra="ignore")
 
+    # Critical phase flags
     vector_search_enabled: bool = True
     rerank_enabled: bool = True
     weighted_fusion_enabled: bool = True
     pushdown_enabled: bool = True
     throttle_enabled: bool = True
+
+    # Production-Ready phase flags
+    personalization_enabled: bool = True
+    ab_testing_enabled: bool = True
+    diversify_enabled: bool = True
+    context_personalization_enabled: bool = True
+    tracing_enabled: bool = True
+    migration_framework_enabled: bool = True
+    shadow_traffic_enabled: bool = False
+    adaptive_k_enabled: bool = True
+    incremental_facets_enabled: bool = True
+    negative_cache_enabled: bool = True
+    asymmetric_indexing_enabled: bool = True
 
 
 class AppConfig(BaseSettings):
@@ -208,6 +328,17 @@ class AppConfig(BaseSettings):
     eval: Annotated[EvalConfig, Field(default_factory=EvalConfig)]
     pushdown: Annotated[PushdownConfig, Field(default_factory=PushdownConfig)]
     throttle: Annotated[ThrottleConfig, Field(default_factory=ThrottleConfig)]
+    
+    # Production-Ready phase configs
+    personalization: Annotated[PersonalizationConfig, Field(default_factory=PersonalizationConfig)]
+    ab_testing: Annotated[ABTestingConfig, Field(default_factory=ABTestingConfig)]
+    tracing: Annotated[TracingConfig, Field(default_factory=TracingConfig)]
+    migration: Annotated[MigrationConfig, Field(default_factory=MigrationConfig)]
+    shadow_traffic: Annotated[ShadowTrafficConfig, Field(default_factory=ShadowTrafficConfig)]
+    chaos: Annotated[ChaosConfig, Field(default_factory=ChaosConfig)]
+    adaptive_k: Annotated[AdaptiveKConfig, Field(default_factory=AdaptiveKConfig)]
+    incremental_facets: Annotated[IncrementalFacetsConfig, Field(default_factory=IncrementalFacetsConfig)]
+    negative_cache: Annotated[NegativeCacheConfig, Field(default_factory=NegativeCacheConfig)]
     feature_flags: Annotated[FeatureFlags, Field(default_factory=FeatureFlags)]
 
 

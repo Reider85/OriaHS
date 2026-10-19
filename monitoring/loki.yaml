@@ -1,0 +1,42 @@
+# Loki logging configuration
+# For development - simple local storage
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 0
+
+common:
+  storage:
+    type: local
+    local:
+      directory: /loki/chunks
+
+query_range:
+  results_cache:
+    cache:
+      embedded:
+        max_size_mb: 100
+
+schema_config:
+  configs:
+    - from: 2020-09-07
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 168h
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+
+# For development - disable WAL to avoid startup issues
+# In production, configure proper WAL and compaction
+compactor:
+  working_directory: /loki/compactor
+  shared_store: filesystem
