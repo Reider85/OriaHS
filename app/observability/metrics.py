@@ -294,6 +294,25 @@ ab_significance_checked_total = Counter(
     labelnames=["experiment_id", "variant", "result"],
 )
 
+# ---------------------------------------------------------------------------
+# MMR diversification metrics — filled by SearchOrchestrator (PR-04)
+# ---------------------------------------------------------------------------
+mmr_diversify_total = Counter(
+    "mmr_diversify_total",
+    "Total MMR diversification operations.",
+    labelnames=["adaptive"],  # "true", "false"
+)
+
+mmr_diversity_score = Gauge(
+    "mmr_diversity_score",
+    "Diversity score from last MMR operation (mean(1 - max_sim)).",
+)
+
+mmr_lambda_param = Gauge(
+    "mmr_lambda_param",
+    "Lambda parameter used in last MMR operation.",
+)
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
@@ -330,4 +349,7 @@ __all__ = [
     "ab_experiments_active",
     "ab_assignments_total",
     "ab_significance_checked_total",
+    "mmr_diversify_total",
+    "mmr_diversity_score",
+    "mmr_lambda_param",
 ]

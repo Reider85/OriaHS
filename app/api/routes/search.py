@@ -84,6 +84,7 @@ async def search(
         feature_flags=settings.feature_flags,
         personalization_service=personalization_service,
         ab_testing_service=ab_testing_service,
+        mmr_config=settings.mmr,
     )
 
     try:

@@ -177,7 +177,7 @@ Critical
 | PR-01 | Персонализация — `users` + `profile_vector` (§5.2.1) | C-14 (exit criteria) | §10.1, §10.2 | §5.2.1 | миграция `006_users`, `app/services/personalization.py`, EMA worker при клике | ⏳ pending |
 | PR-02 | `search_events` — партиционирование + архив (§5.2.2) | PR-01 | §3.1, §11.4 | §5.2.2 | миграция для заполнения структуры MVP, daily partitions, архивация в S3 Parquet 90 дней | ✅ done |
 | PR-03 | A/B-фреймворк (§5.2.3) | PR-02 | §11.3 | §5.2.3 | `app/services/ab_testing.py`, sticky distribution по `user_id`, sequential testing | ✅ done |
-| PR-04 | MMR anti-bubble diversification (§5.2.4) | PR-01 | §10.5 | §5.2.4 | `app/search/diversify.py` (MMR, λ=0.7), `diversify=true` в API | ⏳ pending |
+| PR-04 | MMR anti-bubble diversification (§5.2.4) | PR-01 | §10.5 | §5.2.4 | `app/search/diversify.py` (MMR, λ=0.7), `diversify=true` в API | ✅ done |
 | PR-05 | Контекстная персонализация (§5.2.5) | PR-01 | §10.6 | §5.2.5 | `SearchContext {device, session_id, time_of_day}`, multiple profile vectors | ⏳ pending |
 | PR-06 | Distributed tracing OpenTelemetry (§5.2.6) | C-12 | §11.2 | §5.2.6 | `app/observability/tracing.py`, OTel SDK, export в Tempo, trace↔log correlation | ⏳ pending |
 | PR-07 | Миграционный фреймворк embedding-моделей (§5.2.7) | PR-02, C-07 | §13.1–13.4 | §5.2.7 | blue-green коллекции, backfill-воркер, канареечный reindex 1%, snapshot-on-reindex, rollback | ⏳ pending |

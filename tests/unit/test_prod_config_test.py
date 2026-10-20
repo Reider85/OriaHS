@@ -17,6 +17,7 @@ from app.config import (
     FeatureFlags,
     IncrementalFacetsConfig,
     MigrationConfig,
+    MMRConfig,
     NegativeCacheConfig,
     PersonalizationConfig,
     ShadowTrafficConfig,
@@ -239,6 +240,30 @@ class TestAppConfigIntegration:
         config1 = get_settings()
         config2 = get_settings()
         assert config1 is config2
+
+
+class TestMMRConfig:
+    """Test MMRConfig default values and env override."""
+
+    def test_default_values(self):
+        """Test default values match PROD-PROMPTS.md."""
+
+        config = MMRConfig()
+
+        assert config.default_lambda == 0.7
+        assert config.adaptive_enabled is True
+        assert config.diversity_threshold == 0.3
+        assert config.lambda_step == 0.1
+        assert config.min_lambda == 0.5
+
+    def test_env_override(self):
+        """Test environment variable override."""
+
+        with pytest.raises(ValidationError):
+            MMRConfig(default_lambda=1.5)  # Outside bounds
+
+        with pytest.raises(ValidationError):
+            MMRConfig(min_lambda=-0.1)  # Below 0
 
 
 def get_settings():

@@ -45,11 +45,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+import numpy as np
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import SearchHit, SearchRequest, SearchResponse
-from app.config import FeatureFlags, RerankerConfig, SearchConfig
+from app.config import FeatureFlags, MMRConfig, RerankerConfig, SearchConfig
 from app.db.redis_client import get_redis_client
 from app.embedding.cache import EmbeddingCache
 from app.embedding.service import EmbeddingService
@@ -58,6 +59,7 @@ from app.reranker.circuit_breaker import CircuitBreakerOpen, RerankerCircuitBrea
 from app.reranker.exceptions import RerankerTimeoutException, RerankerUnavailableException
 from app.reranker.schemas import RerankCandidate, RerankResult
 from app.reranker.service import RerankerService
+from app.search.diversify import mmr_diversify_detailed
 from app.search.exceptions import (
     DeadlockError,
     QdrantTimeoutError,
@@ -147,6 +149,7 @@ class SearchOrchestrator:
         qdrant_health_check: bool = True,
         personalization_service: PersonalizationService | None = None,
         ab_testing_service: "ABTestingService | None" = None,
+        mmr_config: "MMRConfig | None" = None,
     ) -> None:
         self._session = session
         self._qdrant = qdrant_client
@@ -161,6 +164,7 @@ class SearchOrchestrator:
         self._qdrant_health_check = qdrant_health_check
         self._personalization = personalization_service
         self._ab_testing = ab_testing_service
+        self._mmr_config = mmr_config or MMRConfig()
 
     async def search(self, req: SearchRequest) -> SearchResponse:
         """Execute the full search pipeline: channels → fusion → rerank.
@@ -271,6 +275,9 @@ class SearchOrchestrator:
         lex_hits, vec_hits = outcome.lex_hits, outcome.vec_hits
         fused = self._fuse(req, lex_hits, vec_hits)
 
+        # Document vectors, filled lazily by personalization and/or diversification.
+        doc_vectors: dict[UUID, np.ndarray] = {}
+
         # Apply personalization if enabled and available
         personalized_debug = None
         if (
@@ -286,27 +293,26 @@ class SearchOrchestrator:
             # Build metadata for personalization
             meta = self._build_meta(lex_hits, vec_hits)
             # Re-embed top documents for personalization (title + snippet)
-            personalized_docs = []
-            doc_vectors = {}
+            personalized_docs: list[str] = []
+            personalized_ids: list[UUID] = []
 
             # Use top-K documents for personalization (limit to avoid excessive embedding)
             limit = min(len(fused), req.top_k * 2)
-            for doc_id, _, _, _ in fused[:limit]:
+            for doc_id, _ in fused[:limit]:
                 # Build text from metadata (title + snippet)
                 title = meta[0].get(doc_id, "")  # titles from _build_meta
                 snippet = meta[1].get(doc_id, "")  # snippets from _build_meta
                 if title or snippet:
                     text = f"{title}\n{snippet}"
                     personalized_docs.append(text)
-                    # Note: doc_vectors will be populated after embedding
-                    doc_vectors[doc_id] = None  # placeholder
+                    personalized_ids.append(doc_id)
 
             if personalized_docs:
                 # Re-embed documents using the embedding service (cache-backed)
                 embedded_vectors = await self._emb_svc.embed_texts(personalized_docs)
 
                 # Map embeddings back to doc_ids
-                for i, doc_id in enumerate(fused[:limit]):
+                for i, doc_id in enumerate(personalized_ids):
                     if i < len(embedded_vectors):
                         doc_vectors[doc_id] = embedded_vectors[i]
 
@@ -340,7 +346,94 @@ class SearchOrchestrator:
         meta = self._build_meta(lex_hits, vec_hits)
         ranked = self._apply_rerank(fused, rerank_scores, req.top_k)
 
-        hits = self._build_hits(req, ranked, meta, rerank_applied, outcome.rerank_degraded)
+        # Apply MMR diversification if enabled (ARCHITECT §10.5, PR-04).
+        diversified_debug = None
+        if (
+            req.diversify
+            and self._flags.diversify_enabled
+            and len(ranked) > 1  # No diversify needed for 0 or 1 docs
+        ):
+            metrics.mmr_diversify_total.labels(
+                adaptive=str(self._mmr_config.adaptive_enabled)
+            ).inc()
+
+            # Embed any document that is still missing a vector (diversify-only path).
+            missing_ids = [
+                doc_id for doc_id, _, _, _ in ranked if doc_id not in doc_vectors
+            ]
+            if missing_ids:
+                limit = min(len(missing_ids), req.top_k * 2)
+                texts_to_embed: list[str] = []
+                embedded_ids: list[UUID] = []
+                for doc_id in missing_ids[:limit]:
+                    title = meta[0].get(doc_id, "")
+                    snippet = meta[1].get(doc_id, "")
+                    if title or snippet:
+                        texts_to_embed.append(f"{title}\n{snippet}")
+                        embedded_ids.append(doc_id)
+                if texts_to_embed:
+                    vectors = await self._emb_svc.embed_texts(texts_to_embed)
+                    for i, doc_id in enumerate(embedded_ids):
+                        if i < len(vectors):
+                            doc_vectors[doc_id] = vectors[i]
+
+            # Resolve lambda parameter (request override wins over config default).
+            lambda_param = (
+                req.diversify_lambda
+                if req.diversify_lambda is not None
+                else self._mmr_config.default_lambda
+            )
+
+            # Apply MMR diversification
+            mmr_result = mmr_diversify_detailed(
+                candidates=[(doc_id, score) for doc_id, score, _, _ in ranked],
+                doc_vectors=doc_vectors,
+                lambda_param=lambda_param,
+                top_k=req.top_k,
+                lambda_adaptive=self._mmr_config.adaptive_enabled,
+                diversity_threshold=self._mmr_config.diversity_threshold,
+                lambda_step=self._mmr_config.lambda_step,
+                min_lambda=self._mmr_config.min_lambda,
+            )
+
+            # Rebuild ranked in MMR order, preserving fusion/rerank debug info
+            rank_by_id = {item[0]: item for item in ranked}
+            ranked = [
+                rank_by_id.get(doc_id, (doc_id, score, score, None))
+                for doc_id, score in mmr_result.doc_ids
+            ]
+
+            # Update metrics and debug info
+            metrics.mmr_diversity_score.set(mmr_result.diversity_score or 0.0)
+            metrics.mmr_lambda_param.set(mmr_result.lambda_used)
+
+            # Prepare debug info for hits
+            if req.explain:
+                diversified_debug = {
+                    "diversified": True,
+                    "lambda_param": mmr_result.lambda_used,
+                    "diversity_score": mmr_result.diversity_score,
+                    "adaptive": mmr_result.adaptive,
+                }
+                logger.debug(
+                    "MMR diversification applied",
+                    extra={
+                        "lambda_used": mmr_result.lambda_used,
+                        "diversity_score": mmr_result.diversity_score,
+                        "adaptive": mmr_result.adaptive,
+                    },
+                )
+        elif req.explain:
+            # Diversification was requested but not applied (flag off or a
+            # single candidate) — report it explicitly for the client.
+            diversified_debug = {
+                "diversified": False,
+                "lambda_param": None,
+                "diversity_score": None,
+                "adaptive": False,
+            }
+
+        hits = self._build_hits(req, ranked, meta, rerank_applied, outcome.rerank_degraded, diversified_debug)
 
         # Compute facets on the top-K results if requested
         facets = {}
@@ -870,6 +963,7 @@ class SearchOrchestrator:
         ],
         rerank_applied: bool,
         rerank_degraded: bool,
+        diversified_debug: dict[str, Any] | None = None,
     ) -> list[SearchHit]:
         titles, snippets, lex_scores, vec_scores, lex_ranks, vec_ranks = meta
         hits: list[SearchHit] = []
@@ -890,6 +984,9 @@ class SearchOrchestrator:
                     "rerank_degraded": rerank_degraded,
                     "rerank_score": rerank_score,
                 }
+                # Add diversification debug if applied
+                if diversified_debug:
+                    debug_info.update(diversified_debug)
             hits.append(
                 SearchHit(
                     doc_id=doc_id,

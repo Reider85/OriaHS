@@ -304,6 +304,27 @@ class NegativeCacheConfig(BaseSettings):
     enabled: bool = True
 
 
+class MMRConfig(BaseSettings):
+    """MMR diversification configuration (ARCHITECT §10.5, PR-04)."""
+
+    model_config = SettingsConfigDict(env_prefix="MMR_", env_file=".env", extra="ignore")
+
+    default_lambda: float = Field(default=0.7, ge=0.0, le=1.0)
+    """Default λ for MMR balancing (relevance vs diversity)."""
+
+    adaptive_enabled: bool = True
+    """Enable adaptive λ adjustment based on diversity_score."""
+
+    diversity_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+    """Minimum diversity_score; adaptive λ triggers if below."""
+
+    lambda_step: float = Field(default=0.1, gt=0.0, le=1.0)
+    """How much to decrease λ per adaptive iteration."""
+
+    min_lambda: float = Field(default=0.5, ge=0.0, le=1.0)
+    """Floor for λ (max 1-λ = 0.5 diversity weight)."""
+
+
 class FeatureFlags(BaseSettings):
     """Feature flags for Critical and Production-Ready phase components (ARCHITECT §17.2)."""
 
@@ -371,6 +392,7 @@ class AppConfig(BaseSettings):
         IncrementalFacetsConfig, Field(default_factory=IncrementalFacetsConfig)
     ]
     negative_cache: Annotated[NegativeCacheConfig, Field(default_factory=NegativeCacheConfig)]
+    mmr: Annotated[MMRConfig, Field(default_factory=MMRConfig)]
     feature_flags: Annotated[FeatureFlags, Field(default_factory=FeatureFlags)]
 
 

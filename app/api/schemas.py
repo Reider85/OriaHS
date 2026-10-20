@@ -108,6 +108,7 @@ class SearchRequest(BaseModel):
     facet_top_n: int = Field(20, ge=1, le=100)  # max buckets per facet field
     personalize: bool = False  # apply user personalization (PR-01)
     diversify: bool = False  # apply MMR diversification (PR-04)
+    diversify_lambda: float | None = Field(None, ge=0.0, le=1.0)  # MMR λ override (PR-04)
     experiment_id: str | None = None  # A/B experiment identifier (PR-03)
     context: SearchContext | None = None  # search context (PR-05)
 
