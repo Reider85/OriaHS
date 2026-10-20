@@ -58,9 +58,7 @@ def _content_hash(title: str, content: str) -> str:
 
 def _eval_documents(dataset_path: str) -> dict[UUID, dict[str, Any]]:
     """Build ``doc_id -> document spec`` for every judged document."""
-    judged: defaultdict[UUID, dict[str, Any]] = defaultdict(
-        lambda: {"queries": []}
-    )
+    judged: defaultdict[UUID, dict[str, Any]] = defaultdict(lambda: {"queries": []})
     for query in load_dataset(dataset_path):
         for raw_id in query.relevant_doc_ids:
             entry = judged[UUID(raw_id)]
@@ -74,10 +72,7 @@ def _eval_documents(dataset_path: str) -> dict[UUID, dict[str, Any]]:
         # The judged text is the concatenation of the queries that point at the
         # document — enough signal for both the lexical and the vector channel.
         title = queries[0]
-        content = (
-            f"{title}. Документ оценки {doc_id}. "
-            f"Релевантен запросам: {', '.join(queries)}."
-        )
+        content = f"{title}. Документ оценки {doc_id}. Релевантен запросам: {', '.join(queries)}."
         documents[doc_id] = {
             "tenant_id": entry["tenant_id"],
             "language": entry["language"],
@@ -98,9 +93,7 @@ def _filler_documents(tenant_id: UUID, count: int) -> list[dict[str, Any]]:
     for i in range(count):
         selective = i % _SELECTIVE_RATIO == 0
         category = (
-            _SELECTIVE_CATEGORY
-            if selective
-            else _FILLER_CATEGORIES[i % len(_FILLER_CATEGORIES)]
+            _SELECTIVE_CATEGORY if selective else _FILLER_CATEGORIES[i % len(_FILLER_CATEGORIES)]
         )
         documents.append(
             {
@@ -162,16 +155,12 @@ async def seed(dataset_path: str, filler: int, batch_size: int) -> int:
         raise SystemExit(f"eval dataset {dataset_path} contains no relevant_doc_ids")
 
     tenant_ids: set[UUID] = {spec["tenant_id"] for spec in eval_docs.values()}
-    filler_docs = (
-        _filler_documents(next(iter(tenant_ids)), filler) if filler > 0 else []
-    )
+    filler_docs = _filler_documents(next(iter(tenant_ids)), filler) if filler > 0 else []
 
     created = 0
     async with async_session_factory() as session:
         model = await embedding_models.get_default_model(session)
-        batch: list[dict[str, Any]] = [
-            {"id": doc_id, **spec} for doc_id, spec in eval_docs.items()
-        ]
+        batch: list[dict[str, Any]] = [{"id": doc_id, **spec} for doc_id, spec in eval_docs.items()]
         batch.extend(filler_docs)
 
         for start in range(0, len(batch), batch_size):

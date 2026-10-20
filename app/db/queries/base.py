@@ -1,9 +1,7 @@
 """Base class for all query modules (ARCHITECT §4.3)."""
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Any
-
-from app.observability import metrics
 
 
 class BaseQueries(ABC):

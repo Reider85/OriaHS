@@ -92,7 +92,9 @@ class SpeculativeReranker:
             if not hits:
                 return  # no speculative input, and no fusion rerank is wanted
 
-            speculative_candidates = self._build_candidates_from_lexical(hits[: self._config.speculative_top_n])
+            speculative_candidates = self._build_candidates_from_lexical(
+                hits[: self._config.speculative_top_n]
+            )
             if not speculative_candidates:
                 return
 
@@ -103,7 +105,9 @@ class SpeculativeReranker:
                     "total_lexical": len(hits),
                 },
             )
-            spec_task = asyncio.ensure_future(self._rerank_candidates(query, speculative_candidates))
+            spec_task = asyncio.ensure_future(
+                self._rerank_candidates(query, speculative_candidates)
+            )
 
         if not self._circuit_breaker.is_open():
             lex_task.add_done_callback(lambda _task: _start_speculative())
@@ -125,12 +129,18 @@ class SpeculativeReranker:
             vec_error = exc
 
         # Log remaining_count if speculative rerank happened
-        if speculative_candidates is not None and spec_task is not None and not spec_task.cancelled():
+        if (
+            speculative_candidates is not None
+            and spec_task is not None
+            and not spec_task.cancelled()
+        ):
             try:
                 # Wait for the speculative rerank to complete
                 rerank_results = await spec_task
                 speculative_doc_ids = {r.doc_id for r in rerank_results}
-                remaining_count = len(set(hit.doc_id for hit in vec_hits if hit.doc_id not in speculative_doc_ids))
+                remaining_count = len(
+                    set(hit.doc_id for hit in vec_hits if hit.doc_id not in speculative_doc_ids)
+                )
                 logger.info(
                     "Speculative rerank completed",
                     extra={

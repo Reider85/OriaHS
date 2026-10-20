@@ -11,6 +11,6 @@ This module provides tracing setup and utilities:
 NOT IMPLEMENTED: This is a stub for PR-00. Real implementation in PR-06.
 """
 
-from app.observability.tracing import setup_tracing, get_tracer
+from app.observability.tracing import get_tracer, setup_tracing
 
 __all__ = ["setup_tracing", "get_tracer"]

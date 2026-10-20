@@ -37,6 +37,7 @@ from app.db.session import get_session
 
 def _to_asyncpg_url(url: str) -> str:
     from urllib.parse import urlsplit
+
     parts = urlsplit(url)
     host = f"{parts.hostname}:{parts.port}" if parts.port else parts.hostname
     return f"postgresql+asyncpg://{parts.username}:{parts.password}@{host}{parts.path}"
@@ -67,9 +68,7 @@ def qdrant_address():
 
 async def _seed_embedding_model(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
-        await conn.execute(
-            text("CREATE EXTENSION IF NOT EXISTS pg_trgm")
-        )
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(
             text("""
@@ -85,7 +84,8 @@ async def _seed_digest_table(engine: AsyncEngine) -> None:
     """Create search_outbox_dead_digest table for DoD tests."""
     async with engine.begin() as conn:
         # Create table if not exists (004 migration DDL)
-        await conn.execute(text("""
+        await conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS search_outbox_dead_digest (
                 id BIGSERIAL PRIMARY KEY,
                 tenant_id UUID NOT NULL,
@@ -98,15 +98,20 @@ async def _seed_digest_table(engine: AsyncEngine) -> None:
                 sample_errors TEXT[] NOT NULL DEFAULT '{}',
                 UNIQUE (tenant_id, model_name, error_type)
             )
-        """))
-        await conn.execute(text("""
+        """)
+        )
+        await conn.execute(
+            text("""
             CREATE INDEX IF NOT EXISTS search_outbox_dead_digest_tenant_idx 
             ON search_outbox_dead_digest (tenant_id)
-        """))
-        await conn.execute(text("""
+        """)
+        )
+        await conn.execute(
+            text("""
             CREATE INDEX IF NOT EXISTS search_outbox_dead_digest_last_seen_idx 
             ON search_outbox_dead_digest (last_seen_at DESC)
-        """))
+        """)
+        )
 
 
 @pytest.fixture
@@ -153,8 +158,9 @@ async def qdrant_service(async_qdrant):
         vectors_config=qmodels.VectorParams(size=1024, distance=qmodels.Distance.COSINE),
         timeout=30,
     )
-    
+
     from app.services.qdrant import QdrantService
+
     service = QdrantService(client=async_qdrant, collection_name="documents")
     yield service
 
@@ -200,10 +206,10 @@ async def wired_app(engine: AsyncEngine, async_redis: aioredis.Redis):
 @pytest.fixture
 async def wired_app_with_qdrant(engine: AsyncEngine, async_redis: aioredis.Redis, qdrant_service):
     """FastAPI app wired to test infrastructure including Qdrant for DoD 3/5."""
-    from app.main import create_app
-    from app.reconciler.worker import ReconcilerWorker
-    from app.reconciler.digest import DigestWorker
     from app.embedding.cache import EmbeddingCache
+    from app.main import create_app
+    from app.reconciler.digest import DigestWorker
+    from app.reconciler.worker import ReconcilerWorker
 
     wrapper = create_app()
     factory = async_sessionmaker(bind=engine, expire_on_commit=False)
@@ -231,7 +237,7 @@ async def wired_app_with_qdrant(engine: AsyncEngine, async_redis: aioredis.Redis
     # Create test reconciler worker
     class TestReconcilerWorker(ReconcilerWorker):
         def __init__(self, *args, **kwargs):
-            config = kwargs.pop('config', None) or settings.reconciler
+            config = kwargs.pop("config", None) or settings.reconciler
             super().__init__(
                 config=config,
                 session_factory=lambda: factory(),
@@ -242,24 +248,26 @@ async def wired_app_with_qdrant(engine: AsyncEngine, async_redis: aioredis.Redis
 
     class TestEmbeddingService:
         """Test embedder that can fail on nonexistent model."""
-        
+
         async def embed_texts(self, texts: list[str]) -> list:
             import numpy as np
+
             # Check if we should fail (for DoD 5)
             # In real tests, this would be controlled via document.embedding_model
             # For now, always return deterministic vectors
             vector = np.array([1.0] + [0.0] * 1023, dtype=np.float32)
             return [vector] * len(texts)
-        
+
         async def embed_query(self, query: str):
             import numpy as np
+
             vector = np.array([1.0] + [0.0] * 1023, dtype=np.float32)
             return vector
 
     # Create test digest worker
     class TestDigestWorker(DigestWorker):
         def __init__(self, *args, **kwargs):
-            config = kwargs.pop('config', None) or settings.reconciler
+            config = kwargs.pop("config", None) or settings.reconciler
             super().__init__(
                 config=config,
                 session_factory=lambda: factory(),
@@ -341,7 +349,7 @@ async def reconcile_wait(max_seconds: int = 60, session_factory=None):
     from app.db.queries.outbox import count_pending
 
     start_time = time.time()
-    
+
     if session_factory is None:
         # If no session_factory provided, use the engine fixture
         session_factory = async_sessionmaker(bind=engine, expire_on_commit=False)
@@ -479,7 +487,9 @@ async def reranker_service_mock_override(wired_app):
     return reranker_service_mock
 
 
-async def poll_until(predicate: Callable[[], bool | Awaitable[bool]], timeout: int = 60, interval: int = 2) -> None:
+async def poll_until(
+    predicate: Callable[[], bool | Awaitable[bool]], timeout: int = 60, interval: int = 2
+) -> None:
     """Poll until predicate returns True or timeout is reached.
 
     Replaces time.sleep loops with proper async polling.
@@ -505,7 +515,7 @@ async def poll_until(predicate: Callable[[], bool | Awaitable[bool]], timeout: i
 
 async def mark_outbox_status(engine: AsyncEngine, token: str, status: str) -> None:
     """Manually update outbox status for testing wait_for_index functionality.
-    
+
     Args:
         engine: Database engine
         token: Document ID UUID string
@@ -519,7 +529,7 @@ async def mark_outbox_status(engine: AsyncEngine, token: str, status: str) -> No
                 SET status = :status, updated_at = now() 
                 WHERE document_id = :doc_id
             """),
-            {"doc_id": doc_id, "status": status}
+            {"doc_id": doc_id, "status": status},
         )
 
 

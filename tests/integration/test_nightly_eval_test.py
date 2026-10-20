@@ -125,7 +125,7 @@ class TestNightlyEvalJob:
         eval_queries.save_result = AsyncMock()
         eval_queries.get_baseline = AsyncMock(return_value=None)
 
-# Mock the orchestrator to return relevant docs for both queries
+        # Mock the orchestrator to return relevant docs for both queries
         def mock_search(request):
             if "test query 1" in request.query:
                 return SearchResponse(
@@ -187,9 +187,13 @@ class TestNightlyEvalJob:
         # Verify results
         assert isinstance(report, EvalReport)
         assert "rrf" in report.strategies
-        assert report.strategies["rrf"]["recall_at_10"] == 1.0  # Both relevant docs retrieved for both queries
+        assert (
+            report.strategies["rrf"]["recall_at_10"] == 1.0
+        )  # Both relevant docs retrieved for both queries
         assert report.strategies["rrf"]["ndcg_at_10"] > 0
-        assert report.strategies["rrf"]["mrr"] == 1.0  # q001: doc1 rank1 (1.0), q002: doc2 rank1 (1.0) → avg 1.0
+        assert (
+            report.strategies["rrf"]["mrr"] == 1.0
+        )  # q001: doc1 rank1 (1.0), q002: doc2 rank1 (1.0) → avg 1.0
 
         # Verify orchestrator was called for each query and strategy
         assert eval_job._orchestrator.search.call_count == 6  # 2 queries × 3 strategies
@@ -242,8 +246,12 @@ class TestNightlyEvalJob:
 
         # Verify results
         assert "weighted" in report.strategies
-        assert report.strategies["weighted"]["recall_at_10"] == 0.75  # q001: both retrieved (1.0), q002: doc2 only (0.5) → avg 0.75
-        assert report.strategies["weighted"]["mrr"] == 1.0  # q001: doc2 rank1 (1.0), q002: doc2 rank1 (1.0) → avg 1.0
+        assert (
+            report.strategies["weighted"]["recall_at_10"] == 0.75
+        )  # q001: both retrieved (1.0), q002: doc2 only (0.5) → avg 0.75
+        assert (
+            report.strategies["weighted"]["mrr"] == 1.0
+        )  # q001: doc2 rank1 (1.0), q002: doc2 rank1 (1.0) → avg 1.0
 
     @pytest.mark.asyncio
     async def test_regression_detection(self, eval_job, eval_queries_data, monkeypatch):
@@ -301,7 +309,9 @@ class TestNightlyEvalJob:
         assert "recall_at_10" in report.regressions["rrf"]
 
     @pytest.mark.asyncio
-    async def test_no_regression_when_baseline_better(self, eval_job, eval_queries_data, monkeypatch):
+    async def test_no_regression_when_baseline_better(
+        self, eval_job, eval_queries_data, monkeypatch
+    ):
         """Test no regression when current is better than baseline."""
         # Mock the dataset loading
         monkeypatch.setattr("app.eval.nightly.load_dataset", lambda _path: eval_queries_data)

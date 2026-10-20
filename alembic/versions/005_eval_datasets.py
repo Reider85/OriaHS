@@ -9,7 +9,6 @@ computes metrics, saves results, and detects regressions against the previous ru
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.dialects.postgresql import ARRAY
 
 from alembic import op
 

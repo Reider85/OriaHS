@@ -130,9 +130,7 @@ class NightlyEvalJob:
 
                 # Get baseline for comparison
                 async with self._session_factory() as session:
-                    baseline = await eval_queries.get_baseline(
-                        session, str(dataset.id), strategy
-                    )
+                    baseline = await eval_queries.get_baseline(session, str(dataset.id), strategy)
                 if baseline:
                     baseline_metrics[strategy] = {
                         "recall_at_10": baseline.recall_at_10,
@@ -359,7 +357,9 @@ class NightlyEvalJob:
                 worst_queries.append(
                     {
                         "query_id": query_id,
-                        "query": query.query[:100] + "..." if len(query.query) > 100 else query.query,
+                        "query": query.query[:100] + "..."
+                        if len(query.query) > 100
+                        else query.query,
                         "recall": recall,
                         "relevant_count": len(query.relevant_doc_ids),
                     }

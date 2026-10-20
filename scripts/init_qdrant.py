@@ -116,7 +116,9 @@ def _sync_payload_indexes(
         field, expected = entry["field"], _SCHEMA_TO_TYPE[entry["type"]]
         info = existing.get(field)
         if info is None:
-            client.create_payload_index(collection_name=collection, field_name=field, field_schema=expected)
+            client.create_payload_index(
+                collection_name=collection, field_name=field, field_schema=expected
+            )
             print(f"  created payload index {field} ({entry['type']})")
         elif info.data_type != expected:
             print(
@@ -166,9 +168,7 @@ def main() -> None:
     parser.add_argument("--url", default=None, help="Qdrant HTTP URL (default: from settings/.env)")
     args = parser.parse_args()
 
-    client: QdrantClient = (
-        QdrantClient(url=args.url) if args.url else get_qdrant_client()
-    )
+    client: QdrantClient = QdrantClient(url=args.url) if args.url else get_qdrant_client()
     for spec in _load_specs(args.config):
         init_collection(client, spec)
 

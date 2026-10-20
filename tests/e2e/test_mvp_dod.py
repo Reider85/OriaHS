@@ -26,7 +26,9 @@ from tests.e2e.conftest import (
 
 
 @pytest.mark.slow
-async def test_dod_1_index_search_workflow(wired_app_with_qdrant, sample_index_data, sample_search_query):
+async def test_dod_1_index_search_workflow(
+    wired_app_with_qdrant, sample_index_data, sample_search_query
+):
     """DoD #1: POST /index creates document and within 30 sec available via POST /search.
 
     Validates the complete indexing → search pipeline within the MVP SLO.
@@ -40,7 +42,10 @@ async def test_dod_1_index_search_workflow(wired_app_with_qdrant, sample_index_d
     doc_id = index_response["doc_id"]
 
     # Wait for reconciler to process (up to 30 seconds)
-    async with reconcile_wait(max_seconds=30, session_factory=lambda: async_sessionmaker(bind=engine, expire_on_commit=False)()):
+    async with reconcile_wait(
+        max_seconds=30,
+        session_factory=lambda: async_sessionmaker(bind=engine, expire_on_commit=False)(),
+    ):
         pass
 
     # Search for the document
@@ -62,7 +67,9 @@ async def test_dod_1_index_search_workflow(wired_app_with_qdrant, sample_index_d
 
 
 @pytest.mark.slow
-async def test_dod_2_rrf_fusion_deduplication(wired_app_with_qdrant, sample_index_data, sample_search_query):
+async def test_dod_2_rrf_fusion_deduplication(
+    wired_app_with_qdrant, sample_index_data, sample_search_query
+):
     """DoD #2: POST /search returns RRF-fused results with proper deduplication.
 
     Validates that RRF fusion works correctly and duplicate documents are
@@ -88,7 +95,10 @@ async def test_dod_2_rrf_fusion_deduplication(wired_app_with_qdrant, sample_inde
     resp2 = await e2e_client.index_document(data2)
 
     # Wait for reconciler
-    async with reconcile_wait(max_seconds=30, session_factory=lambda: async_sessionmaker(bind=engine, expire_on_commit=False)()):
+    async with reconcile_wait(
+        max_seconds=30,
+        session_factory=lambda: async_sessionmaker(bind=engine, expire_on_commit=False)(),
+    ):
         pass
 
     # Search for AI-related content
@@ -208,6 +218,7 @@ async def test_dod_3_reconciler_recovery(wired_app_with_qdrant, sample_index_dat
 
             # Override worker's Qdrant service
             from app.services.qdrant import QdrantService
+
             mock_service = QdrantService(client=mock_client, collection_name="documents")
 
             # Temporarily replace the worker's Qdrant service
@@ -222,7 +233,9 @@ async def test_dod_3_reconciler_recovery(wired_app_with_qdrant, sample_index_dat
                 # Check that document is marked as failed
                 async with engine.begin() as conn:
                     result = await conn.execute(
-                        text("SELECT status, attempts FROM search_outbox WHERE document_id = :doc_id"),
+                        text(
+                            "SELECT status, attempts FROM search_outbox WHERE document_id = :doc_id"
+                        ),
                         {"doc_id": doc_id},
                     )
                     row = result.fetchone()
@@ -254,7 +267,9 @@ async def test_dod_3_reconciler_recovery(wired_app_with_qdrant, sample_index_dat
 
 
 @pytest.mark.slow
-async def test_dod_4_metrics_dashboards(wired_app_with_qdrant, sample_index_data, sample_search_query):
+async def test_dod_4_metrics_dashboards(
+    wired_app_with_qdrant, sample_index_data, sample_search_query
+):
     """DoD #4: Prometheus metrics published and Grafana dashboards display correctly.
 
     Validates that all required metrics are published and accessible.
@@ -266,7 +281,10 @@ async def test_dod_4_metrics_dashboards(wired_app_with_qdrant, sample_index_data
     await e2e_client.index_document(sample_index_data)
 
     # Wait for reconciler to process
-    async with reconcile_wait(max_seconds=30, session_factory=lambda: async_sessionmaker(bind=engine, expire_on_commit=False)()):
+    async with reconcile_wait(
+        max_seconds=30,
+        session_factory=lambda: async_sessionmaker(bind=engine, expire_on_commit=False)(),
+    ):
         pass
 
     search_query = sample_search_query.copy()
@@ -324,6 +342,7 @@ async def test_dod_5_dead_letter_digest(wired_app_with_qdrant):
 
     # Get the document ID from response
     from uuid import UUID
+
     doc_uuid = UUID(doc_id)
 
     # Update the document to have a nonexistent embedding model
@@ -334,11 +353,12 @@ async def test_dod_5_dead_letter_digest(wired_app_with_qdrant):
                 SET embedding_model = 'nonexistent-model'
                 WHERE id = :doc_id
             """),
-            {"doc_id": doc_uuid}
+            {"doc_id": doc_uuid},
         )
 
         # Set outbox attempts to max_attempts-1 so it goes dead on next run
         from app.config import settings
+
         max_attempts = settings.reconciler.max_attempts
         await conn.execute(
             text("""
@@ -346,7 +366,7 @@ async def test_dod_5_dead_letter_digest(wired_app_with_qdrant):
                 SET attempts = :max_attempts_minus_1, status = 'failed', next_retry_at = now()
                 WHERE document_id = :doc_id
             """),
-            {"doc_id": doc_uuid, "max_attempts_minus_1": max_attempts - 1}
+            {"doc_id": doc_uuid, "max_attempts_minus_1": max_attempts - 1},
         )
 
     # Run reconciler - should fail and mark as dead
@@ -364,8 +384,9 @@ async def test_dod_5_dead_letter_digest(wired_app_with_qdrant):
         status, last_error = row
         assert status == "dead", f"Expected status 'dead', got '{status}'"
         assert last_error is not None, "Last error should be set"
-        assert "model" in last_error.lower() or "embedding" in last_error.lower(), \
+        assert "model" in last_error.lower() or "embedding" in last_error.lower(), (
             f"Error message should contain 'model' or 'embedding': {last_error}"
+        )
 
     # Run digest worker to aggregate dead letters
     groups = await digest_worker.run_once()
@@ -382,8 +403,8 @@ async def test_dod_5_dead_letter_digest(wired_app_with_qdrant):
             {
                 "tenant_id": tenant_id,
                 "model_name": "nonexistent-model",
-                "error_type": "embedding_failed"
-            }
+                "error_type": "embedding_failed",
+            },
         )
         row = result.fetchone()
         assert row is not None, "Dead-letter digest row should exist"
@@ -391,7 +412,9 @@ async def test_dod_5_dead_letter_digest(wired_app_with_qdrant):
 
         # Check that sample_doc_ids contains our document ID
         sample_doc_ids = row[4]  # sample_doc_ids column
-        assert doc_uuid in sample_doc_ids, f"Sample doc IDs should contain {doc_uuid}, got {sample_doc_ids}"
+        assert doc_uuid in sample_doc_ids, (
+            f"Sample doc IDs should contain {doc_uuid}, got {sample_doc_ids}"
+        )
 
 
 @pytest.mark.slow

@@ -471,19 +471,21 @@ class TestSpeculativeRerankerConfig:
 
     async def test_speculative_rerank_logging_fields(self) -> None:
         """Test that speculative rerank logs contain speculative_count, remaining_count, and total_rerank_ms."""
-        import logging
-        from unittest.mock import Mock
-        
+
         # Create a mock reranker service that returns results with inference_ms
         class MockRerankerServiceWithInference:
-            async def rerank(self, query: str, docs: list[RerankCandidate], top_k: int | None = None) -> list[RerankResult]:
+            async def rerank(
+                self, query: str, docs: list[RerankCandidate], top_k: int | None = None
+            ) -> list[RerankResult]:
                 # Return results with specific inference_ms values
                 results = []
                 for i, doc in enumerate(docs):
                     score = 1.0 - (i * 0.1)
-                    results.append(RerankResult(doc_id=doc.doc_id, score=score, inference_ms=50.0 + i * 10))
+                    results.append(
+                        RerankResult(doc_id=doc.doc_id, score=score, inference_ms=50.0 + i * 10)
+                    )
                 return results
-        
+
         reranker_service = MockRerankerServiceWithInference()
         circuit_breaker = RerankerCircuitBreaker(RerankerConfig())
         config = RerankerConfig(speculative_top_n=3)
@@ -492,14 +494,14 @@ class TestSpeculativeRerankerConfig:
 
         # Create mock tasks with overlapping doc_ids to test remaining_count
         d1, d2, d3, d4, d5 = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
-        
+
         # Lexical hits: d1, d2, d3 (will be used for speculative reranking)
         lex_hits = [
             LexicalHit(doc_id=d1, score=0.8, title="doc1", content_snippet="content1"),
             LexicalHit(doc_id=d2, score=0.6, title="doc2", content_snippet="content2"),
             LexicalHit(doc_id=d3, score=0.4, title="doc3", content_snippet="content3"),
         ]
-        
+
         # Vector hits: d1, d2, d4, d5 (d1, d2 overlap with lexical, d4, d5 are remaining)
         vec_hits = [
             VectorHit(doc_id=d1, score=0.7, title="doc1", content_snippet="content1"),
@@ -521,21 +523,21 @@ class TestSpeculativeRerankerConfig:
 
         # Capture log output using patch
         from unittest.mock import patch
-        
-        with patch('app.search.speculative.logger') as mock_logger:
+
+        with patch("app.search.speculative.logger") as mock_logger:
             # Run the speculative rerank
             vec_results, rerank_results = await speculative_reranker.run(
                 "test query", lex_task, vec_task
             )
-            
+
             # Check that speculative rerank was called and logged
             assert mock_logger.info.called
-            
+
             # Find the speculative rerank log calls
             speculative_start_call = None
             speculative_completed_call = None
             fallback_log_call = None
-            
+
             for call in mock_logger.info.call_args_list:
                 args, kwargs = call
                 if "Speculative rerank: lexical finished first" in args[0]:
@@ -544,33 +546,35 @@ class TestSpeculativeRerankerConfig:
                     speculative_completed_call = call
                 elif "Fallback rerank completed" in args[0]:
                     fallback_log_call = call
-            
+
             # Verify initial speculative rerank logging
             assert speculative_start_call is not None
             speculative_start_args, speculative_start_kwargs = speculative_start_call
-            speculative_start_extra = speculative_start_kwargs.get('extra', {})
-            
+            speculative_start_extra = speculative_start_kwargs.get("extra", {})
+
             assert "speculative_count" in speculative_start_extra
             assert "total_lexical" in speculative_start_extra
             assert speculative_start_extra["speculative_count"] == 3
             assert speculative_start_extra["total_lexical"] == 3
-            
+
             # Verify completed speculative rerank logging
             assert speculative_completed_call is not None
             speculative_completed_args, speculative_completed_kwargs = speculative_completed_call
-            speculative_completed_extra = speculative_completed_kwargs.get('extra', {})
-            
+            speculative_completed_extra = speculative_completed_kwargs.get("extra", {})
+
             assert "speculative_count" in speculative_completed_extra
             assert "remaining_count" in speculative_completed_extra
             assert "total_lexical" in speculative_completed_extra
             assert "total_vector" in speculative_completed_extra
-            
+
             # Verify values
             assert speculative_completed_extra["speculative_count"] == 3
-            assert speculative_completed_extra["remaining_count"] == 2  # d4, d5 from vector not in speculative
+            assert (
+                speculative_completed_extra["remaining_count"] == 2
+            )  # d4, d5 from vector not in speculative
             assert speculative_completed_extra["total_lexical"] == 3
             assert speculative_completed_extra["total_vector"] == 4
-            
+
             # Verify fallback rerank logging (should not be called in this case)
             assert fallback_log_call is None
 
@@ -599,12 +603,12 @@ class TestSpeculativeRerankerConfig:
         vec_task2 = asyncio.create_task(mock_vec_task_fast())
 
         # Test fallback scenario using patch
-        with patch('app.search.speculative.logger') as mock_logger2:
+        with patch("app.search.speculative.logger") as mock_logger2:
             # Run the speculative rerank (should trigger fallback)
             vec_results2, rerank_results2 = await speculative_reranker.run(
                 "test query", lex_task2, vec_task2
             )
-            
+
             # Find the fallback rerank log call
             fallback_log_call = None
             for call in mock_logger2.info.call_args_list:
@@ -612,17 +616,19 @@ class TestSpeculativeRerankerConfig:
                 if "Fallback rerank completed" in args[0]:
                     fallback_log_call = call
                     break
-            
+
             # Verify fallback rerank logging
             assert fallback_log_call is not None
             fallback_args, fallback_kwargs = fallback_log_call
-            fallback_extra = fallback_kwargs.get('extra', {})
-            
+            fallback_extra = fallback_kwargs.get("extra", {})
+
             assert "rerank_count" in fallback_extra
             assert "total_rerank_ms" in fallback_extra
-            
+
             # Verify values
-            assert fallback_extra["rerank_count"] == 5  # 5 unique docs from fusion (d1, d2, d3, d4, d5)
+            assert (
+                fallback_extra["rerank_count"] == 5
+            )  # 5 unique docs from fusion (d1, d2, d3, d4, d5)
             # total_rerank_ms should be sum of all inference_ms: 50 + 60 + 70 + 80 + 90 = 350
             assert fallback_extra["total_rerank_ms"] == 350.0
 

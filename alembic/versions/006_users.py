@@ -11,7 +11,10 @@ documents table for consistency.
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.dialects.postgresql import VECTOR
+try:
+    from pgvector.sqlalchemy import VECTOR
+except ImportError:
+    from sqlalchemy.dialects.postgresql import VECTOR
 
 from alembic import op
 

@@ -11,6 +11,6 @@ This module provides asymmetric chunking:
 NOT IMPLEMENTED: This is a stub for PR-00. Real implementation in PR-13.
 """
 
-from app.embedding.chunking import chunk_document, aggregate_chunks
+from app.embedding.chunking import aggregate_chunks, chunk_document
 
 __all__ = ["chunk_document", "aggregate_chunks"]

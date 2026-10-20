@@ -12,7 +12,6 @@ and dropped via DROP PARTITION (O(1) operation, no VACUUM needed).
 """
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -25,36 +24,28 @@ depends_on = None
 def upgrade() -> None:
     # Create 30 daily partitions starting from current date
     # Each partition covers one day: FROM (date) TO (date+1day)
-    current_date = sa.text("CURRENT_DATE")
     
     # Generate partition names and bounds for 30 days
     partition_sql = []
     for i in range(30):
-        partition_date = current_date + sa.text(f"INTERVAL '{i} days'")
-        next_date = partition_date + sa.text("INTERVAL '1 day'")
-        
-        partition_name = sa.text(f"search_events_{sa.func.to_char(partition_date, 'YYYYMMDD')}")
-        partition_bound_from = partition_date
-        partition_bound_to = next_date
-        
         partition_sql.append(
             f"""
-            CREATE TABLE IF NOT EXISTS {partition_name} 
+            CREATE TABLE IF NOT EXISTS search_events_{i:04d} 
             PARTITION OF search_events 
-            FOR VALUES FROM ({partition_bound_from}) TO ({partition_bound_to})
+            FOR VALUES FROM ( (CURRENT_DATE + INTERVAL '{i} days')::timestamp ) TO ( (CURRENT_DATE + INTERVAL '{i+1} days')::timestamp )
             """
         )
-    
-    # Execute all partition creation statements
-    op.execute(sa.text(";\n".join(partition_sql)))
-    
+
+    # Execute each partition creation statement individually
+    for sql in partition_sql:
+        op.execute(sa.text(sql.strip()))
+
     # Create indexes on each partition (indexes don't inherit from parent)
     # These indexes match the parent table: search_events_user_time_idx, search_events_exp_idx
     index_sql = []
     for i in range(30):
-        partition_date = current_date + sa.text(f"INTERVAL '{i} days'")
-        partition_name = sa.text(f"search_events_{sa.func.to_char(partition_date, 'YYYYMMDD')}")
-        
+        partition_name = f"search_events_{i:04d}"
+
         # User + time index (for user history queries)
         index_sql.append(
             f"""
@@ -62,7 +53,7 @@ def upgrade() -> None:
             ON {partition_name} (user_id, created_at DESC)
             """
         )
-        
+
         # Experiment index (for A/B testing analysis)
         index_sql.append(
             f"""
@@ -70,22 +61,21 @@ def upgrade() -> None:
             ON {partition_name} (experiment_id, created_at DESC)
             """
         )
-    
-    # Execute all index creation statements
-    op.execute(sa.text(";\n".join(index_sql)))
+
+    # Execute each index creation statement individually
+    for sql in index_sql:
+        op.execute(sa.text(sql.strip()))
 
 
 def downgrade() -> None:
     # Drop all daily partitions (keep search_events_default from migration 001)
     # Drop indexes first, then tables
-    current_date = sa.text("CURRENT_DATE")
     
     # Generate partition names for 30 days
     drop_sql = []
     for i in range(30):
-        partition_date = current_date + sa.text(f"INTERVAL '{i} days'")
-        partition_name = sa.text(f"search_events_{sa.func.to_char(partition_date, 'YYYYMMDD')}")
-        
+        partition_name = f"search_events_{i:04d}"
+
         # Drop indexes
         drop_sql.append(
             f"""
@@ -94,6 +84,7 @@ def downgrade() -> None:
             DROP TABLE IF EXISTS {partition_name};
             """
         )
-    
-    # Execute all drop statements
-    op.execute(sa.text(";\n".join(drop_sql)))
+
+    # Execute each drop statement individually
+    for sql in drop_sql:
+        op.execute(sa.text(sql.strip()))

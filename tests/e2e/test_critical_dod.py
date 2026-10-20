@@ -25,10 +25,10 @@ from tests.e2e.conftest import (
 
 def _cb_state_open(metrics_text: str) -> bool:
     """Parse circuit_breaker_state gauge and return True if state=2 (open)."""
-    for line in metrics_text.split('\n'):
+    for line in metrics_text.split("\n"):
         if line.startswith('circuit_breaker_state{component="reranker"} '):
             try:
-                value = float(line.split(' ')[1])
+                value = float(line.split(" ")[1])
                 return value == 2  # 2 = open
             except (ValueError, IndexError):
                 continue
@@ -37,10 +37,10 @@ def _cb_state_open(metrics_text: str) -> bool:
 
 def _cb_state_half_open(metrics_text: str) -> bool:
     """Parse circuit_breaker_state gauge and return True if state=1 (half_open)."""
-    for line in metrics_text.split('\n'):
+    for line in metrics_text.split("\n"):
         if line.startswith('circuit_breaker_state{component="reranker"} '):
             try:
-                value = float(line.split(' ')[1])
+                value = float(line.split(" ")[1])
                 return value == 1  # 1 = half_open
             except (ValueError, IndexError):
                 continue
@@ -49,10 +49,10 @@ def _cb_state_half_open(metrics_text: str) -> bool:
 
 def _cb_state_closed(metrics_text: str) -> bool:
     """Parse circuit_breaker_state gauge and return True if state=0 (closed)."""
-    for line in metrics_text.split('\n'):
+    for line in metrics_text.split("\n"):
         if line.startswith('circuit_breaker_state{component="reranker"} '):
             try:
-                value = float(line.split(' ')[1])
+                value = float(line.split(" ")[1])
                 return value == 0  # 0 = closed
             except (ValueError, IndexError):
                 continue
@@ -518,6 +518,7 @@ async def test_critical_dod_4_qdrant_down_degraded(wired_app):
 
     # Patch the vector_search function
     import app.search.orchestrator as orchestrator_module
+
     orchestrator_module.vector_search = mock_search_unavailable
 
     try:
@@ -540,6 +541,7 @@ async def test_critical_dod_4_qdrant_down_degraded(wired_app):
     finally:
         # Restore original vector_search
         import app.search.orchestrator as orchestrator_module
+
         orchestrator_module.vector_search = original_search
 
     # Test partial result mode (deadline exceeded)
@@ -856,6 +858,7 @@ async def test_critical_end_to_end_workflow(wired_app):
 
     # Patch the vector_search function
     import app.search.orchestrator as orchestrator_module
+
     orchestrator_module.vector_search = mock_search_unavailable
 
     try:
@@ -865,6 +868,7 @@ async def test_critical_end_to_end_workflow(wired_app):
     finally:
         # Restore original vector_search
         import app.search.orchestrator as orchestrator_module
+
         orchestrator_module.vector_search = original_search
 
     # 6. Test facets
