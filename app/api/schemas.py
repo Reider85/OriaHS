@@ -5,11 +5,11 @@ models here. Status values are frozen here so the fast-path no-op is
 observable to clients instead of being a silent 201.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.search.filters import SearchFilters
 
@@ -181,6 +181,71 @@ class SearchResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # PR-02: Search events models
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# PR-03: A/B testing models
+# ---------------------------------------------------------------------------
+
+
+class ExperimentCreate(BaseModel):
+    """Body of ``POST /experiments`` (PR-03).
+
+    Create a new A/B testing experiment with variants and optional weights.
+    ``variants`` is either a plain list of names (each gets an empty
+    parameter overlay) or a mapping name -> parameter overlay applied to
+    ``SearchRequest`` (``fusion``, ``fusion_alpha``, ``rerank``,
+    ``personalize``, ``diversify`` — all optional).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    experiment_id: str = Field(..., min_length=1)  # unique experiment identifier
+    description: str  # human-readable description
+    variants: list[str] | dict[str, dict[str, Any]]  # names or name -> overlay
+    weights: list[float] | None = None  # optional weights for distribution
+    start_date: date  # when the experiment starts
+
+    @model_validator(mode="after")
+    def _validate_variants_and_weights(self) -> "ExperimentCreate":
+        names = list(self.variants) if isinstance(self.variants, list) else list(self.variants)
+        if len(names) < 2:
+            raise ValueError("at least two variants are required")
+        if any(not name for name in names):
+            raise ValueError("variant names must be non-empty")
+        if len(set(names)) != len(names):
+            raise ValueError("variant names must be unique")
+        if self.weights is not None:
+            if len(self.weights) != len(names):
+                raise ValueError("weights length must match the number of variants")
+            if any(w < 0 for w in self.weights):
+                raise ValueError("weights must be non-negative")
+            if sum(self.weights) <= 0:
+                raise ValueError("weights must sum to a positive value")
+        return self
+
+
+class ExperimentMetricsResponse(BaseModel):
+    """Response of ``GET /experiments/{id}/metrics`` (PR-03).
+
+    Daily per-variant metrics for an experiment.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    date: date  # date for these metrics
+    metrics: dict[str, dict[str, float]]  # variant → metrics dict
+
+
+class StopExperimentRequest(BaseModel):
+    """Body of ``POST /experiments/{id}/stop`` (PR-03).
+
+    Stop an experiment and declare winning variant.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    winning_variant: str  # winning variant name
 
 
 class ClickRequest(BaseModel):

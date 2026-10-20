@@ -10,13 +10,14 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import boto3
-from pyarrow import Table, types
-from pyarrow.lib import schema
+import pyarrow as pa
+import pyarrow.parquet as pq
+from pyarrow import Table
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
-    from app.db.models.search_event import SearchEvent
+    pass
 
 from app.config import SearchEventsConfig
 from app.db.queries.base import BaseQueries
@@ -42,6 +43,7 @@ class SearchEventQueries(BaseQueries):
         top_doc_ids: list[str],
         fusion_strategy: str | None,
         experiment_id: str | None,
+        variant: str | None = None,
         latency_ms: int | None,
     ) -> int:
         """Insert a search event into the appropriate daily partition.
@@ -55,6 +57,7 @@ class SearchEventQueries(BaseQueries):
             top_doc_ids: List of top-K document UUIDs
             fusion_strategy: Fusion strategy used (e.g., "rrf", "weighted")
             experiment_id: A/B test experiment ID (optional)
+            variant: Assigned A/B variant name (optional, PR-03)
             latency_ms: Query latency in milliseconds
 
         Returns:
@@ -71,11 +74,11 @@ class SearchEventQueries(BaseQueries):
                 """
                 INSERT INTO search_events (
                     user_id, tenant_id, query_text, query_lang, top_doc_ids,
-                    fusion_strategy, experiment_id, latency_ms, created_at
+                    fusion_strategy, experiment_id, variant, latency_ms, created_at
                 )
                 VALUES (
                     :user_id, :tenant_id, :query_text, :query_lang, :top_doc_ids,
-                    :fusion_strategy, :experiment_id, :latency_ms, now()
+                    :fusion_strategy, :experiment_id, :variant, :latency_ms, now()
                 )
                 RETURNING id
                 """
@@ -88,12 +91,15 @@ class SearchEventQueries(BaseQueries):
                 "top_doc_ids": top_doc_ids,
                 "fusion_strategy": fusion_strategy,
                 "experiment_id": experiment_id,
+                "variant": variant,
                 "latency_ms": latency_ms,
             },
         )
 
-        event_id = result.scalar_one()
-        metrics.search_events_inserted_total.labels(fusion_strategy=fusion_strategy or "unknown").inc()
+        event_id: int = result.scalar_one()
+        metrics.search_events_inserted_total.labels(
+            fusion_strategy=fusion_strategy or "unknown"
+        ).inc()
         return event_id
 
     async def insert_click_event(
@@ -106,6 +112,7 @@ class SearchEventQueries(BaseQueries):
         clicked_doc_id: str,
         position: int | None,
         experiment_id: str | None,
+        variant: str | None = None,
     ) -> None:
         """Insert a click event into the appropriate daily partition.
 
@@ -117,6 +124,7 @@ class SearchEventQueries(BaseQueries):
             clicked_doc_id: Clicked document UUID
             position: Position in results (1-based, optional)
             experiment_id: A/B test experiment ID (optional)
+            variant: Recomputed A/B variant name (optional, PR-03)
         """
         # Hash query text if PII protection is enabled
         if self.config.hash_query_text:
@@ -134,11 +142,11 @@ class SearchEventQueries(BaseQueries):
                 """
                 INSERT INTO search_events (
                     user_id, tenant_id, query_text, clicked_doc_id, position,
-                    experiment_id, created_at
+                    experiment_id, variant, created_at
                 )
                 VALUES (
                     :user_id, :tenant_id, :query_text, :clicked_doc_id, :position,
-                    :experiment_id, now()
+                    :experiment_id, :variant, now()
                 )
                 """
             ),
@@ -149,6 +157,7 @@ class SearchEventQueries(BaseQueries):
                 "clicked_doc_id": clicked_doc_id,
                 "position": position,
                 "experiment_id": experiment_id,
+                "variant": variant,
             },
         )
 
@@ -171,7 +180,7 @@ class SearchEventQueries(BaseQueries):
                 f"""
                 CREATE TABLE IF NOT EXISTS {partition_name}
                 PARTITION OF search_events
-                FOR VALUES FROM ('{date.strftime('%Y-%m-%d')}') TO ('{(date + timedelta(days=1)).strftime("%Y-%m-%d")}')
+                FOR VALUES FROM ('{date.strftime("%Y-%m-%d")}') TO ('{(date + timedelta(days=1)).strftime("%Y-%m-%d")}')
                 """
             )
         )
@@ -222,7 +231,7 @@ class SearchEventQueries(BaseQueries):
         )
 
         partitions = []
-        for row in await result.fetchall():
+        for row in result.fetchall():
             partition_name = row.partition_name
 
             # Extract upper bound from the bound expression
@@ -292,20 +301,21 @@ class SearchEventQueries(BaseQueries):
 
         # Convert rows to Arrow Table
         # Define schema based on the SearchEvent model
-        arrow_schema = schema(
+        arrow_schema = pa.schema(
             [
-                ("id", types.int64()),
-                ("user_id", types.string()),
-                ("tenant_id", types.string()),
-                ("query_text", types.string()),
-                ("query_lang", types.string()),
-                ("top_doc_ids", types.list_(types.string())),
-                ("clicked_doc_id", types.string()),
-                ("position", types.int32()),
-                ("fusion_strategy", types.string()),
-                ("experiment_id", types.string()),
-                ("latency_ms", types.int32()),
-                ("created_at", types.timestamp("ns")),
+                ("id", pa.int64()),
+                ("user_id", pa.string()),
+                ("tenant_id", pa.string()),
+                ("query_text", pa.string()),
+                ("query_lang", pa.string()),
+                ("top_doc_ids", pa.list_(pa.string())),
+                ("clicked_doc_id", pa.string()),
+                ("position", pa.int32()),
+                ("fusion_strategy", pa.string()),
+                ("experiment_id", pa.string()),
+                ("variant", pa.string()),
+                ("latency_ms", pa.int32()),
+                ("created_at", pa.timestamp("ns")),
             ]
         )
 
@@ -318,11 +328,14 @@ class SearchEventQueries(BaseQueries):
                 "tenant_id": str(row.tenant_id),
                 "query_text": row.query_text,
                 "query_lang": row.query_lang,
-                "top_doc_ids": [str(doc_id) for doc_id in row.top_doc_ids] if row.top_doc_ids else [],
+                "top_doc_ids": [str(doc_id) for doc_id in row.top_doc_ids]
+                if row.top_doc_ids
+                else [],
                 "clicked_doc_id": str(row.clicked_doc_id) if row.clicked_doc_id else None,
                 "position": row.position,
                 "fusion_strategy": row.fusion_strategy,
                 "experiment_id": row.experiment_id,
+                "variant": row.variant,
                 "latency_ms": row.latency_ms,
                 "created_at": row.created_at,
             }
@@ -335,7 +348,7 @@ class SearchEventQueries(BaseQueries):
         import io
 
         parquet_buffer = io.BytesIO()
-        table.write_parquet(parquet_buffer)
+        pq.write_table(table, parquet_buffer)
         parquet_bytes = parquet_buffer.getvalue()
 
         # Upload to S3 using boto3 (sync in thread to avoid blocking)

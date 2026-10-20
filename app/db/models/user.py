@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pgvector.sqlalchemy import VECTOR
-from sqlalchemy import DateTime, Index
+from sqlalchemy import DateTime, Index, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,19 +20,19 @@ class User(Base):
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
-        server_default="gen_random_uuid()",
+        server_default=text("gen_random_uuid()"),
     )
     tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     profile_vector: Mapped[list[float] | None] = mapped_column(VECTOR(1024), nullable=True)
-    profile_version: Mapped[int] = mapped_column(server_default="0", nullable=False)
-    click_count: Mapped[int] = mapped_column(server_default="0", nullable=False)
+    profile_version: Mapped[int] = mapped_column(server_default=text("0"), nullable=False)
+    click_count: Mapped[int] = mapped_column(server_default=text("0"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default="now()",
+        server_default=text("now()"),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default="now()",
+        server_default=text("now()"),
         nullable=False,
     )

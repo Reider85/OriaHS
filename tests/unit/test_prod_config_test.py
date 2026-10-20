@@ -10,9 +10,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import (
+    ABTestingConfig,
     AdaptiveKConfig,
     AppConfig,
-    ABTestingConfig,
     ChaosConfig,
     FeatureFlags,
     IncrementalFacetsConfig,
@@ -211,16 +211,16 @@ class TestAppConfigIntegration:
         config = AppConfig()
 
         # Check new sections exist
-        assert hasattr(config, 'personalization')
-        assert hasattr(config, 'ab_testing')
-        assert hasattr(config, 'tracing')
-        assert hasattr(config, 'migration')
-        assert hasattr(config, 'shadow_traffic')
-        assert hasattr(config, 'chaos')
-        assert hasattr(config, 'adaptive_k')
-        assert hasattr(config, 'incremental_facets')
-        assert hasattr(config, 'negative_cache')
-        assert hasattr(config, 'feature_flags')
+        assert hasattr(config, "personalization")
+        assert hasattr(config, "ab_testing")
+        assert hasattr(config, "tracing")
+        assert hasattr(config, "migration")
+        assert hasattr(config, "shadow_traffic")
+        assert hasattr(config, "chaos")
+        assert hasattr(config, "adaptive_k")
+        assert hasattr(config, "incremental_facets")
+        assert hasattr(config, "negative_cache")
+        assert hasattr(config, "feature_flags")
 
         # Check they're the correct types
         assert isinstance(config.personalization, PersonalizationConfig)
@@ -244,4 +244,5 @@ class TestAppConfigIntegration:
 def get_settings():
     """Import AppConfig with proper path for testing."""
     from app.config import get_settings
+
     return get_settings()

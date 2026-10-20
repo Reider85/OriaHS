@@ -14,6 +14,18 @@ from app.search.orchestrator import SearchOrchestrator, _ChannelOutcome
 from app.search.vector import VectorHit
 
 
+def _root_counter_value(counter) -> float:
+    """Read an *unlabeled* counter via the public collect() API.
+
+    prometheus_client no longer exposes ``_value`` on the root Counter wrapper
+    (only on labelled children), so tests read the ``*_total`` sample.
+    """
+    for sample in counter.collect()[0].samples:
+        if sample.name.endswith("_total"):
+            return sample.value
+    return 0.0
+
+
 def _build_orchestrator(*, vector_enabled=True, qdrant=None, flags=None):
     """Orchestrator with every collaborator mocked.
 
@@ -219,7 +231,7 @@ class TestDegradedMode:
             reason: metrics.search_degraded_total.labels(reason=reason)._value.get()
             for reason in reasons
         }
-        partial_before = metrics.search_partial_total._value.get()
+        partial_before = _root_counter_value(metrics.search_partial_total)
 
         with patch.object(
             orchestrator,
@@ -247,7 +259,7 @@ class TestDegradedMode:
                     metrics.search_degraded_total.labels(reason=reason)._value.get()
                     == before[reason]
                 )
-            assert metrics.search_partial_total._value.get() == partial_before
+            assert _root_counter_value(metrics.search_partial_total) == partial_before
 
     @pytest.mark.asyncio
     async def test_qdrant_exception_during_search(self, mock_lexical_hits, search_request):

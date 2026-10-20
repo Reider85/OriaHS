@@ -8,6 +8,7 @@ active default (ARCHITECT §5.4).
 
 from collections.abc import AsyncIterator, Iterator
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import pytest
 import redis.asyncio as aioredis
@@ -36,8 +37,8 @@ def _to_asyncpg_url(url: str) -> str:
 
 @pytest.fixture(scope="session")
 def pg_dsn() -> Iterator[str]:
-    """Disposable PostgreSQL 16 (same image as docker-compose)."""
-    with PostgresContainer("postgres:16-alpine") as pg:
+    """Disposable PostgreSQL 16 + pgvector (same image as docker-compose)."""
+    with PostgresContainer("pgvector/pgvector:pg16") as pg:
         yield _to_asyncpg_url(pg.get_connection_url())
 
 
@@ -69,6 +70,7 @@ async def engine(pg_dsn: str) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(pg_dsn)
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
     await _seed_embedding_model(engine)
     yield engine
@@ -86,6 +88,22 @@ async def async_redis(redis_address: tuple[str, int]) -> AsyncIterator[aioredis.
     await client.flushdb()
     yield client
     await client.aclose()
+
+
+@pytest.fixture
+async def user_with_profile():
+    """Fixture for a user with existing profile (for personalization tests)."""
+    user_id = uuid4()
+    tenant_id = uuid4()
+    return {"user_id": user_id, "tenant_id": tenant_id}
+
+
+@pytest.fixture
+async def cold_start_user():
+    """Fixture for a cold-start user (no profile, no clicks)."""
+    user_id = uuid4()
+    tenant_id = uuid4()
+    return {"user_id": user_id, "tenant_id": tenant_id}
 
 
 @pytest.fixture

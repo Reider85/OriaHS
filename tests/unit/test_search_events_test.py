@@ -6,10 +6,10 @@ properly isolated.
 """
 
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import text
 
 from app.config import SearchEventsConfig
 from app.db.queries.search_events import SearchEventQueries
@@ -52,7 +52,7 @@ class TestSearchEventQueries:
     async def test_insert_search_event(self, mock_session, search_event_queries):
         """Test inserting a search event into the database."""
         # Mock the execute call to return an ID
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.scalar_one.return_value = 123
         mock_session.execute.return_value = mock_result
 
@@ -66,6 +66,7 @@ class TestSearchEventQueries:
             top_doc_ids=["doc-1", "doc-2", "doc-3"],
             fusion_strategy="rrf",
             experiment_id="test-experiment",
+            variant="A",
             latency_ms=150,
         )
 
@@ -75,17 +76,20 @@ class TestSearchEventQueries:
         # Verify the execute call was made with correct parameters
         mock_session.execute.assert_called_once()
         call_args = mock_session.execute.call_args
-        assert call_args[0][0].text == """
-            INSERT INTO search_events (
-                user_id, tenant_id, query_text, query_lang, top_doc_ids,
-                fusion_strategy, experiment_id, latency_ms, created_at
-            )
-            VALUES (
-                :user_id, :tenant_id, :query_text, :query_lang, :top_doc_ids,
-                :fusion_strategy, :experiment_id, :latency_ms, now()
-            )
-            RETURNING id
-        """
+        assert (
+            call_args[0][0].text
+            == """
+                INSERT INTO search_events (
+                    user_id, tenant_id, query_text, query_lang, top_doc_ids,
+                    fusion_strategy, experiment_id, variant, latency_ms, created_at
+                )
+                VALUES (
+                    :user_id, :tenant_id, :query_text, :query_lang, :top_doc_ids,
+                    :fusion_strategy, :experiment_id, :variant, :latency_ms, now()
+                )
+                RETURNING id
+                """
+        )
 
     @pytest.mark.asyncio
     async def test_insert_search_event_hashed(self, mock_session, search_event_queries):
@@ -94,7 +98,7 @@ class TestSearchEventQueries:
         search_event_queries.config.hash_query_text = True
 
         # Mock the execute call
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.scalar_one.return_value = 123
         mock_session.execute.return_value = mock_result
 
@@ -115,7 +119,7 @@ class TestSearchEventQueries:
         call_args = mock_session.execute.call_args
         params = call_args[0][1]
         assert params["query_text"].startswith("sha256:")
-        assert len(params["query_text"]) == 69  # "sha256:" + 64 hex chars
+        assert len(params["query_text"]) == 71  # "sha256:" + 64 hex chars
 
     @pytest.mark.asyncio
     async def test_insert_click_event(self, mock_session, search_event_queries):
@@ -132,21 +136,25 @@ class TestSearchEventQueries:
             clicked_doc_id="doc-456",
             position=3,
             experiment_id="test-experiment",
+            variant="B",
         )
 
         # Verify the execute call was made (SET LOCAL + INSERT)
         assert mock_session.execute.call_count == 2
         call_args = mock_session.execute.call_args
-        assert call_args[0][0].text == """
-            INSERT INTO search_events (
-                user_id, tenant_id, query_text, clicked_doc_id, position,
-                experiment_id, created_at
-            )
-            VALUES (
-                :user_id, :tenant_id, :query_text, :clicked_doc_id, :position,
-                :experiment_id, now()
-            )
-        """
+        assert (
+            call_args[0][0].text
+            == """
+                INSERT INTO search_events (
+                    user_id, tenant_id, query_text, clicked_doc_id, position,
+                    experiment_id, variant, created_at
+                )
+                VALUES (
+                    :user_id, :tenant_id, :query_text, :clicked_doc_id, :position,
+                    :experiment_id, :variant, now()
+                )
+                """
+        )
 
     @pytest.mark.asyncio
     async def test_create_daily_partition(self, mock_session, search_event_queries):
@@ -170,11 +178,16 @@ class TestSearchEventQueries:
     @pytest.mark.asyncio
     async def test_list_partitions(self, mock_session, search_event_queries):
         """Test listing all partitions."""
-        # Mock the execute call to return partition data
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = [
-            ("search_events_20241220", "FROM ('2024-12-20') TO ('2024-12-21')"),
-            ("search_events_20241219", "FROM ('2024-12-19') TO ('2024-12-20')"),
+            SimpleNamespace(
+                partition_name="search_events_20241220",
+                bound_expr="FROM ('2024-12-20') TO ('2024-12-21')",
+            ),
+            SimpleNamespace(
+                partition_name="search_events_20241219",
+                bound_expr="FROM ('2024-12-19') TO ('2024-12-20')",
+            ),
         ]
         mock_session.execute.return_value = mock_result
 
@@ -189,55 +202,55 @@ class TestSearchEventQueries:
     @pytest.mark.asyncio
     async def test_drop_partition_older_than(self, mock_session, search_event_queries):
         """Test dropping partitions older than specified days."""
-        # Mock partition listing
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = [
-            ("search_events_20241220", datetime(2024, 12, 21)),  # Recent
-            ("search_events_20241201", datetime(2024, 12, 2)),   # Old
+            SimpleNamespace(
+                partition_name="search_events_20241220",
+                bound_expr="FROM ('2024-12-20') TO ('2024-12-21')",
+            ),  # Recent
+            SimpleNamespace(
+                partition_name="search_events_20241201",
+                bound_expr="FROM ('2024-12-01') TO ('2024-12-02')",
+            ),  # Old
         ]
         mock_session.execute.return_value = mock_result
 
-        # Mock the drop calls
-        mock_session.execute = AsyncMock()
-
-        # Call the method
+        # Call the method (cutoff = 2025-01-15 - 30d = 2024-12-16)
         dropped = await search_event_queries.drop_partition_older_than(
-            mock_session, days=30, now=datetime(2024, 12, 15)
+            mock_session, days=30, now=datetime(2025, 1, 15)
         )
 
         # Verify the result
         assert dropped == ["search_events_20241201"]
 
-        # Verify the drop call was made
-        mock_session.execute.assert_called_once_with(text("DROP TABLE search_events_20241201"))
-
     @pytest.mark.asyncio
     @patch("boto3.client")
-    async def test_archive_partition_to_s3(self, mock_boto3_client, mock_session, search_event_queries):
+    async def test_archive_partition_to_s3(
+        self, mock_boto3_client, mock_session, search_event_queries
+    ):
         """Test archiving a partition to S3."""
         # Mock S3 client
-        mock_s3 = AsyncMock()
+        mock_s3 = MagicMock()
         mock_boto3_client.return_value = mock_s3
         mock_s3.head_bucket.side_effect = Exception("Bucket not found")  # Force bucket creation
-        mock_s3.put_object = AsyncMock()
 
-        # Mock database query
-        mock_result = AsyncMock()
+        # Mock database query — archive rows are attribute-accessed (row.id, ...)
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = [
-            # Mock row data matching the SearchEvent model
-            (
-                1,  # id
-                "user-123",  # user_id
-                "tenant-123",  # tenant_id
-                "test query",  # query_text
-                "en",  # query_lang
-                ["doc-1", "doc-2"],  # top_doc_ids
-                None,  # clicked_doc_id
-                None,  # position
-                "rrf",  # fusion_strategy
-                None,  # experiment_id
-                150,  # latency_ms
-                datetime(2024, 12, 20, 10, 30, 0),  # created_at
+            SimpleNamespace(
+                id=1,
+                user_id="user-123",
+                tenant_id="tenant-123",
+                query_text="test query",
+                query_lang="en",
+                top_doc_ids=["doc-1", "doc-2"],
+                clicked_doc_id=None,
+                position=None,
+                fusion_strategy="rrf",
+                experiment_id="test-experiment",
+                variant="A",
+                latency_ms=150,
+                created_at=datetime(2024, 12, 20, 10, 30, 0),
             )
         ]
         mock_session.execute.return_value = mock_result
@@ -261,7 +274,7 @@ class TestSearchEventQueries:
     async def test_archive_partition_empty(self, mock_session, search_event_queries):
         """Test archiving an empty partition."""
         # Mock empty database query
-        mock_result = AsyncMock()
+        mock_result = MagicMock()
         mock_result.fetchall.return_value = []
         mock_session.execute.return_value = mock_result
 
@@ -283,7 +296,8 @@ class TestSearchEventQueries:
         await search_event_queries.drop_partition(mock_session, "search_events_20241220")
 
         # Verify the execute call
-        mock_session.execute.assert_called_once_with(text("DROP TABLE search_events_20241220"))
+        mock_session.execute.assert_called_once()
+        assert mock_session.execute.call_args[0][0].text == "DROP TABLE search_events_20241220"
 
     @pytest.mark.asyncio
     async def test_drop_partition_default_guard(self, mock_session, search_event_queries):

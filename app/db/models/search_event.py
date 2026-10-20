@@ -5,11 +5,12 @@ Table is partitioned by created_at (daily) for efficient archival and querying.
 """
 
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, Index
-from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY, BIGINT, UUID as PG_UUID
+from sqlalchemy import DateTime, Index, text
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
+from sqlalchemy.dialects.postgresql import BIGINT
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.models.base import Base
@@ -45,14 +46,19 @@ class SearchEvent(Base):
     # Search metadata
     fusion_strategy: Mapped[str | None] = mapped_column(nullable=True)
     experiment_id: Mapped[str | None] = mapped_column(nullable=True)
+    variant: Mapped[str | None] = mapped_column(
+        nullable=True
+    )  # A/B variant (PR-03), shadow traffic (PR-08)
     latency_ms: Mapped[int | None] = mapped_column(nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default="now()",
+        server_default=text("now()"),
         nullable=False,
     )
 
     def __repr__(self) -> str:
-        return f"SearchEvent(id={self.id}, user_id={self.user_id}, query='{self.query_text[:50]}...')"
+        return (
+            f"SearchEvent(id={self.id}, user_id={self.user_id}, query='{self.query_text[:50]}...')"
+        )

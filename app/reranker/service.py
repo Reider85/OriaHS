@@ -40,7 +40,12 @@ class RerankerService:
         """Load the model eagerly at application startup.
 
         Call this from FastAPI lifespan if RERANKER_WARMUP=true.
+        Mock mode (RERANKER_MOCK_MODE) is a no-op — the 2.3 GB cross-encoder
+        is intentionally never loaded in tests.
         """
+        if self._config.mock_mode:
+            logger.info("Reranker warmup skipped (mock_mode)")
+            return
         await self._lazy_load()
 
     async def rerank(

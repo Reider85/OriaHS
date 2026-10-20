@@ -176,11 +176,11 @@ class PersonalizationConfig(BaseSettings):
         env_prefix="PERSONALIZATION_", env_file=".env", extra="ignore"
     )
 
-    ema_alpha_new: float = 0.5
-    ema_alpha_established: float = 0.05
-    new_user_click_threshold: int = 10
-    profile_weight: float = 0.3
-    fused_weight: float = 0.7
+    ema_alpha_new: float = Field(default=0.5, ge=0.0, le=1.0)
+    ema_alpha_established: float = Field(default=0.05, ge=0.0, le=1.0)
+    new_user_click_threshold: int = Field(default=10, ge=1)
+    profile_weight: float = Field(default=0.3, ge=0.0, le=1.0)
+    fused_weight: float = Field(default=0.7, ge=0.0, le=1.0)
     cold_start_enabled: bool = True
     profile_dimension: int = 1024
     gdpr_delete_endpoint_enabled: bool = True
@@ -191,11 +191,11 @@ class ABTestingConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="AB_TESTING_", env_file=".env", extra="ignore")
 
-    sticky_hash_buckets: int = 1000
+    sticky_hash_buckets: int = Field(default=1000, gt=0)
     sequential_testing_enabled: bool = True
-    significance_level: float = 0.05
-    min_samples_per_variant: int = 100
-    max_parallel_experiments: int = 3
+    significance_level: float = Field(default=0.05, gt=0.0, lt=1.0)
+    min_samples_per_variant: int = Field(default=100, ge=1)
+    max_parallel_experiments: int = Field(default=3, ge=1)
 
 
 class TracingConfig(BaseSettings):

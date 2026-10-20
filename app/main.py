@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.middleware.request_id import RequestIDMiddleware
-from app.api.routes import health, index, search
+from app.api.routes import experiments, health, index, search, users
 from app.config import settings
 from app.observability import metrics  # noqa: F401 - registers all Prometheus collectors
 from app.observability.logging import setup_logging
@@ -49,6 +49,8 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(index.router)
     app.include_router(search.router)
+    app.include_router(users.router)
+    app.include_router(experiments.router)
 
     Instrumentator(excluded_handlers=["/health", settings.observability.metrics_path]).instrument(
         app

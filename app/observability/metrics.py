@@ -274,6 +274,26 @@ search_events_rows_total = Gauge(
     "Total rows across all search_events partitions.",
 )
 
+# ---------------------------------------------------------------------------
+# A/B testing metrics — filled by ABTestingService and SearchOrchestrator (PR-03)
+# ---------------------------------------------------------------------------
+ab_experiments_active = Gauge(
+    "ab_experiments_active",
+    "Number of currently active A/B experiments.",
+)
+
+ab_assignments_total = Counter(
+    "ab_assignments_total",
+    "Total user assignments to experiment variants.",
+    labelnames=["experiment_id", "variant"],
+)
+
+ab_significance_checked_total = Counter(
+    "ab_significance_checked_total",
+    "Total statistical significance checks for experiments.",
+    labelnames=["experiment_id", "variant", "result"],
+)
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
@@ -302,10 +322,12 @@ __all__ = [
     "outbox_reindex_triggered_total",
     "vector_search_latency_ms",
     "eval_last_run_timestamp",
-    # Search events metrics
     "search_events_inserted_total",
     "search_events_clicks_total",
     "search_events_partitions_archived_total",
     "search_events_partitions_dropped_total",
     "search_events_rows_total",
+    "ab_experiments_active",
+    "ab_assignments_total",
+    "ab_significance_checked_total",
 ]

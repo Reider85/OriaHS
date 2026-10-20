@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
+    get_ab_testing_service,
     get_circuit_breaker,
     get_personalization_service,
     get_reranker_service,
@@ -28,6 +29,7 @@ from app.reranker.service import RerankerService
 from app.search.orchestrator import SearchOrchestrator
 from app.search.qdrant_client import get_async_qdrant_client
 from app.search.speculative import SpeculativeReranker
+from app.services.ab_testing import ABTestingService
 from app.services.personalization import PersonalizationService
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,7 @@ RerankerDep = Annotated[RerankerService, Depends(get_reranker_service)]
 CircuitBreakerDep = Annotated[RerankerCircuitBreaker, Depends(get_circuit_breaker)]
 SpeculativeDep = Annotated[SpeculativeReranker, Depends(get_speculative_reranker)]
 PersonalizationDep = Annotated["PersonalizationService", Depends(get_personalization_service)]
+ABTestingDep = Annotated[ABTestingService, Depends(get_ab_testing_service)]
 
 
 def _get_embedding_service() -> EmbeddingService:
@@ -61,6 +64,7 @@ async def search(
     circuit_breaker: CircuitBreakerDep,
     speculative_reranker: SpeculativeDep,
     personalization_service: PersonalizationDep,
+    ab_testing_service: ABTestingDep,
 ) -> SearchResponse:
     """Run hybrid search: lexical + vector channels, fusion, optional rerank."""
     qdrant_client = get_async_qdrant_client()
@@ -79,6 +83,7 @@ async def search(
         reranker_config=settings.reranker,
         feature_flags=settings.feature_flags,
         personalization_service=personalization_service,
+        ab_testing_service=ab_testing_service,
     )
 
     try:
@@ -101,12 +106,30 @@ async def log_click(
     req: ClickRequest,
     session: SessionDep,
     personalization_service: PersonalizationDep,
+    ab_testing_service: ABTestingDep,
 ) -> dict[str, bool]:
     """Log user click interaction for analytics and personalization."""
     from app.db.queries.search_events import search_event_queries
-    from app.observability import metrics
 
     try:
+        # Recompute the A/B variant server-side (sticky hash, stateless) so
+        # the click is attributed to the same arm as the originating search.
+        # Assignment metrics are not incremented here — only searches count.
+        variant = None
+        if (
+            req.experiment_id
+            and req.user_id is not None
+            and settings.feature_flags.ab_testing_enabled
+        ):
+            experiment = await ab_testing_service.get_experiment(req.experiment_id)
+            if experiment is not None:
+                variant = ab_testing_service.assign_variant(
+                    req.user_id,
+                    req.experiment_id,
+                    list(experiment.variants.keys()),
+                    experiment.weights,
+                )
+
         # Log the click event
         await search_event_queries.insert_click_event(
             session=session,
@@ -116,13 +139,11 @@ async def log_click(
             clicked_doc_id=str(req.clicked_doc_id),
             position=req.position,
             experiment_id=req.experiment_id,
+            variant=variant,
         )
 
         # Update user profile if personalization is enabled and user_id is provided
-        if (
-            settings.feature_flags.personalization_enabled
-            and req.user_id is not None
-        ):
+        if settings.feature_flags.personalization_enabled and req.user_id is not None:
             # Run personalization update in background to not block response
             import asyncio
 

@@ -42,7 +42,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from qdrant_client import AsyncQdrantClient
@@ -71,6 +71,9 @@ from app.search.pushdown import maybe_pushdown
 from app.search.speculative import SpeculativeReranker
 from app.search.vector import VectorHit, vector_search
 from app.services.personalization import PersonalizationService
+
+if TYPE_CHECKING:
+    from app.services.ab_testing import ABTestingService
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +146,7 @@ class SearchOrchestrator:
         feature_flags: FeatureFlags | None = None,
         qdrant_health_check: bool = True,
         personalization_service: PersonalizationService | None = None,
+        ab_testing_service: "ABTestingService | None" = None,
     ) -> None:
         self._session = session
         self._qdrant = qdrant_client
@@ -156,6 +160,7 @@ class SearchOrchestrator:
         self._flags = feature_flags or FeatureFlags()
         self._qdrant_health_check = qdrant_health_check
         self._personalization = personalization_service
+        self._ab_testing = ab_testing_service
 
     async def search(self, req: SearchRequest) -> SearchResponse:
         """Execute the full search pipeline: channels → fusion → rerank.
@@ -165,6 +170,59 @@ class SearchOrchestrator:
         """
         start = time.monotonic()
         deadline = start + req.timeout_ms / 1000.0
+
+        # Apply A/B testing if experiment is active (ARCHITECT 11.3, PR-03)
+        variant = None
+        if (
+            req.experiment_id
+            and req.user_id is not None
+            and self._flags.ab_testing_enabled
+            and self._ab_testing is not None
+        ):
+            try:
+                experiment = await self._ab_testing.get_experiment(req.experiment_id)
+                if experiment is not None:
+                    variant = self._ab_testing.assign_variant(
+                        req.user_id,
+                        req.experiment_id,
+                        list(experiment.variants.keys()),
+                        experiment.weights,
+                    )
+                    metrics.ab_assignments_total.labels(
+                        experiment_id=req.experiment_id, variant=variant
+                    ).inc()
+
+                    # Apply variant-specific parameter overlay (whitelisted
+                    # SearchRequest fields only — unknown overlay keys are
+                    # ignored, never injected into the request)
+                    variant_params = experiment.variants.get(variant) or {}
+                    if variant_params:
+                        req = req.model_copy(
+                            update={
+                                "fusion": variant_params.get("fusion", req.fusion),
+                                "fusion_alpha": variant_params.get(
+                                    "fusion_alpha", req.fusion_alpha
+                                ),
+                                "rerank": variant_params.get("rerank", req.rerank),
+                                "personalize": variant_params.get("personalize", req.personalize),
+                                "diversify": variant_params.get("diversify", req.diversify),
+                            }
+                        )
+
+                    logger.debug(
+                        "A/B variant applied",
+                        extra={
+                            "experiment_id": req.experiment_id,
+                            "variant": variant,
+                            "user_id": str(req.user_id),
+                        },
+                    )
+            except Exception as e:
+                logger.warning(
+                    "A/B testing failed, proceeding with default parameters",
+                    extra={"error": str(e)},
+                )
+                variant = None
 
         # Check if vector search should be disabled
         vector_disabled = False
@@ -324,19 +382,20 @@ class SearchOrchestrator:
             degraded=degraded,
             partial=outcome.partial,
             personalization=personalized_debug,
+            variant=variant,
         )
 
         # Fire-and-forget logging of search events (uses fresh session to avoid race with request cleanup)
-        async def log_search_event():
+        async def log_search_event() -> None:
             try:
                 from app.db.queries.search_events import search_event_queries
                 from app.db.session import async_session_factory
-                
+
                 # Use fresh session for background logging
                 async with async_session_factory() as bg_session:
                     # Extract top-K doc_ids from hits for logging
-                    top_doc_ids = [hit.doc_id for hit in hits[:req.top_k]]
-                    
+                    top_doc_ids = [hit.doc_id for hit in hits[: req.top_k]]
+
                     await search_event_queries.insert_search_event(
                         session=bg_session,
                         user_id=str(req.user_id) if req.user_id else None,
@@ -346,11 +405,12 @@ class SearchOrchestrator:
                         top_doc_ids=[str(doc_id) for doc_id in top_doc_ids],
                         fusion_strategy=req.fusion,
                         experiment_id=req.experiment_id,
+                        variant=variant,
                         latency_ms=latency_ms,
                     )
-                    
+
                     logger.debug("Search event logged", extra={"tenant_id": str(req.tenant_id)})
-                    
+
             except Exception as e:
                 # Never let logging failures affect the response
                 logger.warning("Failed to log search event", extra={"error": str(e)})
