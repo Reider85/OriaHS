@@ -22,6 +22,14 @@ class SearchContext(BaseModel):
     time_of_day: Literal["morning", "afternoon", "evening", "night"] | None = None
 
 
+class PersonalizationDebug(BaseModel):
+    """Debug information for personalized search (PR-01)."""
+
+    applied: bool
+    cold_start: bool
+    profile_version: int
+
+
 class IndexRequest(BaseModel):
     """Body of ``POST /index`` (ARCHITECT §14.2)."""
 
@@ -154,6 +162,9 @@ class SearchResponse(BaseModel):
 
     ``partial`` is ``True`` when the deadline cut the pipeline short and the
     response holds only what completed in time (C-09).
+
+    ``personalization`` contains debug info when personalized search is applied
+    (PR-01). Present only when ``personalize=True`` and personalization was enabled.
     """
 
     hits: list[SearchHit]
@@ -164,3 +175,4 @@ class SearchResponse(BaseModel):
     degraded: bool = False
     partial: bool = False
     variant: str | None = None  # shadow traffic variant identifier (PR-08)
+    personalization: PersonalizationDebug | None = None  # PR-01 personalization debug

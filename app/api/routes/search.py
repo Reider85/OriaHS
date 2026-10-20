@@ -12,7 +12,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_circuit_breaker, get_reranker_service, get_speculative_reranker
+from app.api.deps import (
+    get_circuit_breaker,
+    get_personalization_service,
+    get_reranker_service,
+    get_speculative_reranker,
+)
 from app.api.schemas import SearchRequest, SearchResponse
 from app.config import settings
 from app.db.session import get_session
@@ -23,6 +28,7 @@ from app.reranker.service import RerankerService
 from app.search.orchestrator import SearchOrchestrator
 from app.search.qdrant_client import get_async_qdrant_client
 from app.search.speculative import SpeculativeReranker
+from app.services.personalization import PersonalizationService
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +38,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 RerankerDep = Annotated[RerankerService, Depends(get_reranker_service)]
 CircuitBreakerDep = Annotated[RerankerCircuitBreaker, Depends(get_circuit_breaker)]
 SpeculativeDep = Annotated[SpeculativeReranker, Depends(get_speculative_reranker)]
+PersonalizationDep = Annotated["PersonalizationService", Depends(get_personalization_service)]
 
 
 def _get_embedding_service() -> EmbeddingService:
@@ -53,6 +60,7 @@ async def search(
     reranker_service: RerankerDep,
     circuit_breaker: CircuitBreakerDep,
     speculative_reranker: SpeculativeDep,
+    personalization_service: PersonalizationDep,
 ) -> SearchResponse:
     """Run hybrid search: lexical + vector channels, fusion, optional rerank."""
     qdrant_client = get_async_qdrant_client()
@@ -70,6 +78,7 @@ async def search(
         speculative_reranker=speculative_reranker,
         reranker_config=settings.reranker,
         feature_flags=settings.feature_flags,
+        personalization_service=personalization_service,
     )
 
     try:

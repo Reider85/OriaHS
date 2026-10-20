@@ -173,7 +173,25 @@ search_degraded_total = Counter(
 
 search_partial_total = Counter(
     "search_partial_total",
-    "Total search requests that returned partial results.",
+    "Number of searches that returned partial results due to timeout",
+    ["tenant_id"],
+)
+
+# Personalization metrics (PR-01)
+profile_vector_updates_total = Counter(
+    "profile_vector_updates_total",
+    "Total number of profile vector updates (EMA aggregation)",
+    ["tenant_id"],
+)
+personalized_searches_total = Counter(
+    "personalized_searches_total",
+    "Total number of personalized searches",
+    ["tenant_id", "cold_start"],
+)
+profile_vector_dimension = Gauge(
+    "profile_vector_dimension",
+    "Dimension of user profile vectors (should be 1024)",
+    ["tenant_id"],
 )
 
 # ---------------------------------------------------------------------------

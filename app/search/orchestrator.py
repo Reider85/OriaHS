@@ -70,6 +70,7 @@ from app.search.lexical import LexicalHit, lexical_search
 from app.search.pushdown import maybe_pushdown
 from app.search.speculative import SpeculativeReranker
 from app.search.vector import VectorHit, vector_search
+from app.services.personalization import PersonalizationService
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,7 @@ class SearchOrchestrator:
         reranker_config: RerankerConfig | None = None,
         feature_flags: FeatureFlags | None = None,
         qdrant_health_check: bool = True,
+        personalization_service: PersonalizationService | None = None,
     ) -> None:
         self._session = session
         self._qdrant = qdrant_client
@@ -153,6 +155,7 @@ class SearchOrchestrator:
         self._reranker_config = reranker_config or RerankerConfig()
         self._flags = feature_flags or FeatureFlags()
         self._qdrant_health_check = qdrant_health_check
+        self._personalization = personalization_service
 
     async def search(self, req: SearchRequest) -> SearchResponse:
         """Execute the full search pipeline: channels → fusion → rerank.
@@ -209,6 +212,70 @@ class SearchOrchestrator:
 
         lex_hits, vec_hits = outcome.lex_hits, outcome.vec_hits
         fused = self._fuse(req, lex_hits, vec_hits)
+
+        # Apply personalization if enabled and available
+        personalized_debug = None
+        if (
+            req.personalize
+            and req.user_id is not None
+            and self._flags.personalization_enabled
+            and self._personalization is not None
+        ):
+            metrics.personalized_searches_total.labels(
+                tenant_id=str(req.tenant_id),
+                cold_start="false",  # Will be set in service
+            ).inc()
+            # Build metadata for personalization
+            meta = self._build_meta(lex_hits, vec_hits)
+            # Re-embed top documents for personalization (title + snippet)
+            personalized_docs = []
+            doc_vectors = {}
+
+            # Use top-K documents for personalization (limit to avoid excessive embedding)
+            limit = min(len(fused), req.top_k * 2)
+            for doc_id, _, _, _ in fused[:limit]:
+                # Build text from metadata (title + snippet)
+                title = meta[0].get(doc_id, "")  # titles from _build_meta
+                snippet = meta[1].get(doc_id, "")  # snippets from _build_meta
+                if title or snippet:
+                    text = f"{title}\n{snippet}"
+                    personalized_docs.append(text)
+                    # Note: doc_vectors will be populated after embedding
+                    doc_vectors[doc_id] = None  # placeholder
+
+            if personalized_docs:
+                # Re-embed documents using the embedding service (cache-backed)
+                embedded_vectors = await self._emb_svc.embed_texts(personalized_docs)
+
+                # Map embeddings back to doc_ids
+                for i, doc_id in enumerate(fused[:limit]):
+                    if i < len(embedded_vectors):
+                        doc_vectors[doc_id] = embedded_vectors[i]
+
+                # Apply personalization scoring
+                fused = await self._personalization.personalize_scores(
+                    fused, req.user_id, req.tenant_id, doc_vectors
+                )
+
+                # Prepare debug info
+                profile_vector = await self._personalization.get_profile_vector(
+                    req.user_id, req.tenant_id
+                )
+                personalized_debug = {
+                    "applied": True,
+                    "cold_start": profile_vector is None,
+                    "profile_version": getattr(profile_vector, "profile_version", 0)
+                    if profile_vector is not None
+                    else 0,
+                }
+                logger.debug(
+                    "Personalization applied",
+                    extra={
+                        "user_id": str(req.user_id),
+                        "cold_start": personalized_debug["cold_start"],
+                    },
+                )
+
         rerank_scores = outcome.rerank_scores
         rerank_applied = bool(rerank_scores)
 
@@ -238,6 +305,16 @@ class SearchOrchestrator:
             latency_ms
         )
 
+        # Expose personalization debug info if applied
+        if personalized_debug and req.explain:
+            # Add per-hit personalization info when explain=True
+            for hit in hits:
+                if hit.debug is None:
+                    hit.debug = {}
+                hit.debug["personalized"] = personalized_debug["applied"]
+                hit.debug["cold_start"] = personalized_debug["cold_start"]
+                hit.debug["profile_version"] = personalized_debug["profile_version"]
+
         return SearchResponse(
             hits=hits,
             facets=facets,
@@ -246,6 +323,7 @@ class SearchOrchestrator:
             latency_ms=latency_ms,
             degraded=degraded,
             partial=outcome.partial,
+            personalization=personalized_debug,
         )
 
     # ------------------------------------------------------------------

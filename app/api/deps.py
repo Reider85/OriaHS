@@ -22,6 +22,7 @@ __all__ = [
     "get_session",
     "get_settings",
     "get_speculative_reranker",
+    "get_personalization_service",
 ]
 
 
@@ -56,3 +57,10 @@ def get_speculative_reranker() -> SpeculativeReranker:
     return SpeculativeReranker(
         get_reranker_service(), get_circuit_breaker(), get_settings().reranker
     )
+
+
+def get_personalization_service():
+    """Factory for PersonalizationService (session-bound, not cached)."""
+    from app.services.personalization import PersonalizationService
+
+    return PersonalizationService
