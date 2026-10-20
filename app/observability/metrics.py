@@ -245,6 +245,35 @@ eval_last_run_timestamp = Gauge(
     "Unix timestamp of the last completed nightly eval run.",
 )
 
+# ---------------------------------------------------------------------------
+# Search events metrics — PR-02 partitioning and archiving
+# ---------------------------------------------------------------------------
+search_events_inserted_total = Counter(
+    "search_events_inserted_total",
+    "Total search events inserted.",
+    labelnames=["fusion_strategy"],
+)
+
+search_events_clicks_total = Counter(
+    "search_events_clicks_total",
+    "Total click events recorded.",
+)
+
+search_events_partitions_archived_total = Counter(
+    "search_events_partitions_archived_total",
+    "Total partitions archived to S3 Parquet.",
+)
+
+search_events_partitions_dropped_total = Counter(
+    "search_events_partitions_dropped_total",
+    "Total partitions dropped after archival.",
+)
+
+search_events_rows_total = Gauge(
+    "search_events_rows_total",
+    "Total rows across all search_events partitions.",
+)
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
@@ -273,4 +302,10 @@ __all__ = [
     "outbox_reindex_triggered_total",
     "vector_search_latency_ms",
     "eval_last_run_timestamp",
+    # Search events metrics
+    "search_events_inserted_total",
+    "search_events_clicks_total",
+    "search_events_partitions_archived_total",
+    "search_events_partitions_dropped_total",
+    "search_events_rows_total",
 ]

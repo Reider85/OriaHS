@@ -10,5 +10,16 @@ from app.db.models.embedding_model import EmbeddingModel
 from app.db.models.eval_dataset import EvalDataset
 from app.db.models.eval_result import EvalResult
 from app.db.models.outbox import OutboxItem
+from app.db.models.search_event import SearchEvent
+from app.db.models.user import User
 
-__all__ = ["Base", "Document", "EmbeddingModel", "OutboxItem", "EvalDataset", "EvalResult"]
+__all__ = [
+    "Base",
+    "Document",
+    "EmbeddingModel",
+    "OutboxItem",
+    "EvalDataset",
+    "EvalResult",
+    "SearchEvent",
+    "User",
+]

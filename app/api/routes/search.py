@@ -18,7 +18,7 @@ from app.api.deps import (
     get_reranker_service,
     get_speculative_reranker,
 )
-from app.api.schemas import SearchRequest, SearchResponse
+from app.api.schemas import ClickRequest, SearchRequest, SearchResponse
 from app.config import settings
 from app.db.session import get_session
 from app.embedding.cache import EmbeddingCache
@@ -93,4 +93,57 @@ async def search(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Search failed: {exc}",
+        ) from exc
+
+
+@router.post("/click", status_code=status.HTTP_200_OK)
+async def log_click(
+    req: ClickRequest,
+    session: SessionDep,
+    personalization_service: PersonalizationDep,
+) -> dict[str, bool]:
+    """Log user click interaction for analytics and personalization."""
+    from app.db.queries.search_events import search_event_queries
+    from app.observability import metrics
+
+    try:
+        # Log the click event
+        await search_event_queries.insert_click_event(
+            session=session,
+            user_id=str(req.user_id) if req.user_id else None,
+            tenant_id=str(req.tenant_id),
+            query_text=req.query,
+            clicked_doc_id=str(req.clicked_doc_id),
+            position=req.position,
+            experiment_id=req.experiment_id,
+        )
+
+        # Update user profile if personalization is enabled and user_id is provided
+        if (
+            settings.feature_flags.personalization_enabled
+            and req.user_id is not None
+        ):
+            # Run personalization update in background to not block response
+            import asyncio
+
+            async def update_profile():
+                try:
+                    await personalization_service.update_on_click(
+                        user_id=req.user_id,
+                        tenant_id=req.tenant_id,
+                        clicked_doc_id=req.clicked_doc_id,
+                        query=req.query,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to update user profile: {e}")
+
+            asyncio.create_task(update_profile())
+
+        return {"logged": True}
+
+    except Exception as exc:
+        logger.exception("Click logging failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Click logging failed: {exc}",
         ) from exc

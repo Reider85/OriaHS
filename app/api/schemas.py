@@ -176,3 +176,25 @@ class SearchResponse(BaseModel):
     partial: bool = False
     variant: str | None = None  # shadow traffic variant identifier (PR-08)
     personalization: PersonalizationDebug | None = None  # PR-01 personalization debug
+
+
+# ---------------------------------------------------------------------------
+# PR-02: Search events models
+# ---------------------------------------------------------------------------
+
+
+class ClickRequest(BaseModel):
+    """Body of ``POST /search/click`` (PR-02).
+
+    Records user click interactions for analytics and personalization.
+    tenant_id is required as search_events.tenant_id is NOT NULL.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: UUID | None = None  # optional, for personalization
+    tenant_id: UUID  # required, NOT NULL in search_events table
+    query: str  # original query text (for analytics)
+    clicked_doc_id: UUID
+    position: int | None = None  # 1-based position in results, optional
+    experiment_id: str | None = None  # A/B test identifier, optional

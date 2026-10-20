@@ -315,7 +315,7 @@ class SearchOrchestrator:
                 hit.debug["cold_start"] = personalized_debug["cold_start"]
                 hit.debug["profile_version"] = personalized_debug["profile_version"]
 
-        return SearchResponse(
+        response = SearchResponse(
             hits=hits,
             facets=facets,
             total_lexical=len(lex_hits),
@@ -325,6 +325,40 @@ class SearchOrchestrator:
             partial=outcome.partial,
             personalization=personalized_debug,
         )
+
+        # Fire-and-forget logging of search events (uses fresh session to avoid race with request cleanup)
+        async def log_search_event():
+            try:
+                from app.db.queries.search_events import search_event_queries
+                from app.db.session import async_session_factory
+                
+                # Use fresh session for background logging
+                async with async_session_factory() as bg_session:
+                    # Extract top-K doc_ids from hits for logging
+                    top_doc_ids = [hit.doc_id for hit in hits[:req.top_k]]
+                    
+                    await search_event_queries.insert_search_event(
+                        session=bg_session,
+                        user_id=str(req.user_id) if req.user_id else None,
+                        tenant_id=str(req.tenant_id),
+                        query_text=req.query,
+                        query_lang=None,  # Not available in SearchRequest
+                        top_doc_ids=[str(doc_id) for doc_id in top_doc_ids],
+                        fusion_strategy=req.fusion,
+                        experiment_id=req.experiment_id,
+                        latency_ms=latency_ms,
+                    )
+                    
+                    logger.debug("Search event logged", extra={"tenant_id": str(req.tenant_id)})
+                    
+            except Exception as e:
+                # Never let logging failures affect the response
+                logger.warning("Failed to log search event", extra={"error": str(e)})
+
+        # Start background logging task
+        asyncio.create_task(log_search_event())
+
+        return response
 
     # ------------------------------------------------------------------
     # Channels

@@ -172,7 +172,9 @@ class ThrottleConfig(BaseSettings):
 class PersonalizationConfig(BaseSettings):
     """Personalization configuration (EMA profile vectors, cold-start, GDPR)."""
 
-    model_config = SettingsConfigDict(env_prefix="PERSONALIZATION_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="PERSONALIZATION_", env_file=".env", extra="ignore"
+    )
 
     ema_alpha_new: float = 0.5
     ema_alpha_established: float = 0.05
@@ -222,6 +224,31 @@ class MigrationConfig(BaseSettings):
     rollback_timeout_minutes: int = 30
 
 
+class SearchEventsConfig(BaseSettings):
+    """Search events partitioning and S3 archive configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="SEARCH_EVENTS_", env_file=".env", extra="ignore"
+    )
+
+    # S3/MinIO configuration for Parquet archive
+    s3_endpoint_url: str = "http://minio:9000"
+    s3_bucket: str = "oriahs-search-events-archive"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+
+    # Partitioning configuration
+    retention_days: int = 90
+    partition_ahead_days: int = 7
+    migration_partition_days: int = 30
+
+    # PII protection
+    hash_query_text: bool = False
+
+    # Performance
+    click_statement_timeout_ms: int = 100
+
+
 class ShadowTrafficConfig(BaseSettings):
     """Shadow traffic configuration (parallel strategy evaluation)."""
 
@@ -260,7 +287,9 @@ class AdaptiveKConfig(BaseSettings):
 class IncrementalFacetsConfig(BaseSettings):
     """Incremental facets configuration (Redis cache)."""
 
-    model_config = SettingsConfigDict(env_prefix="INCREMENTAL_FACETS_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="INCREMENTAL_FACETS_", env_file=".env", extra="ignore"
+    )
 
     cache_ttl_seconds: int = 600
     cache_key_prefix: str = "facets"
@@ -328,16 +357,19 @@ class AppConfig(BaseSettings):
     eval: Annotated[EvalConfig, Field(default_factory=EvalConfig)]
     pushdown: Annotated[PushdownConfig, Field(default_factory=PushdownConfig)]
     throttle: Annotated[ThrottleConfig, Field(default_factory=ThrottleConfig)]
-    
+
     # Production-Ready phase configs
     personalization: Annotated[PersonalizationConfig, Field(default_factory=PersonalizationConfig)]
     ab_testing: Annotated[ABTestingConfig, Field(default_factory=ABTestingConfig)]
     tracing: Annotated[TracingConfig, Field(default_factory=TracingConfig)]
     migration: Annotated[MigrationConfig, Field(default_factory=MigrationConfig)]
+    search_events: Annotated[SearchEventsConfig, Field(default_factory=SearchEventsConfig)]
     shadow_traffic: Annotated[ShadowTrafficConfig, Field(default_factory=ShadowTrafficConfig)]
     chaos: Annotated[ChaosConfig, Field(default_factory=ChaosConfig)]
     adaptive_k: Annotated[AdaptiveKConfig, Field(default_factory=AdaptiveKConfig)]
-    incremental_facets: Annotated[IncrementalFacetsConfig, Field(default_factory=IncrementalFacetsConfig)]
+    incremental_facets: Annotated[
+        IncrementalFacetsConfig, Field(default_factory=IncrementalFacetsConfig)
+    ]
     negative_cache: Annotated[NegativeCacheConfig, Field(default_factory=NegativeCacheConfig)]
     feature_flags: Annotated[FeatureFlags, Field(default_factory=FeatureFlags)]
 
