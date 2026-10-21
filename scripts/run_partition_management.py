@@ -38,7 +38,7 @@ async def main() -> None:
 
         for i in range(search_events_config.partition_ahead_days):
             partition_date = today + timedelta(days=i)
-            await queries.create_daily_partition(session, partition_date)
+            await queries.create_daily_partition(partition_date)
             logger.debug(f"Ensured partition for {partition_date.strftime('%Y-%m-%d')}")
 
         # Step 2: Find and archive partitions older than retention days
@@ -46,7 +46,7 @@ async def main() -> None:
         cutoff_date = today - timedelta(days=search_events_config.retention_days)
 
         # List all partitions
-        partitions = await queries.list_partitions(session)
+        partitions = await queries.list_partitions()
         archived_count = 0
         dropped_count = 0
 
@@ -57,13 +57,13 @@ async def main() -> None:
                 try:
                     # Archive to S3
                     s3_key = await queries.archive_partition_to_s3(
-                        session, partition_name, search_events_config.s3_bucket
+                        partition_name, search_events_config.s3_bucket
                     )
                     logger.info(f"Archived {partition_name} to s3://{search_events_config.s3_bucket}/{s3_key}")
                     archived_count += 1
 
                     # Drop the partition
-                    await queries.drop_partition(session, partition_name)
+                    await queries.drop_partition(partition_name)
                     logger.info(f"Dropped partition {partition_name}")
                     dropped_count += 1
 
@@ -90,12 +90,5 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Get session from app context
-    from app.db.session import async_session_factory
-
-    async def run_with_session():
-        async with async_session_factory() as session:
-            await main()
-
     # Run the main function
-    asyncio.run(run_with_session())
+    asyncio.run(main())

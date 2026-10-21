@@ -528,3 +528,111 @@ class TestRerankIntegration:
         assert resp.degraded is True, "vector channel loss is the only degraded trigger"
         assert resp.total_vector == 0
         assert resp.hits[0].debug["rerank_applied"] is True
+
+    @pytest.mark.asyncio
+    @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
+    @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
+    async def test_contextual_personalization_with_context(
+        self, mock_lex, mock_vec, orchestrator, config
+    ):
+        """PR-05: Contextual personalization applied when context provided and flag enabled."""
+        from app.api.schemas import SearchContext
+
+        # Mock search results
+        d1, d2 = uuid4(), uuid4()
+        mock_lex.return_value = [_lex_hit(d1, score=1.0), _lex_hit(d2, score=0.9)]
+        mock_vec.return_value = [_vec_hit(d1, score=0.8), _vec_hit(d2, score=0.7)]
+
+        # Mock personalization service
+        mock_profile_info = AsyncMock()
+        mock_profile_info.vector = [0.5] * 1024  # mock vector
+        mock_profile_info.profile_version = 3
+        mock_profile_info.click_count = 5
+        mock_profile_info.context_key = "morning"
+
+        mock_personalization = AsyncMock()
+        mock_personalization.get_profile_info = AsyncMock(return_value=mock_profile_info)
+        mock_personalization.personalize_scores = AsyncMock(
+            return_value=[(d1, 0.85), (d2, 0.75)]
+        )
+
+        # Create orchestrator with mock personalization service
+        orchestrator._personalization = mock_personalization
+        orchestrator._flags = FeatureFlags(
+            personalization_enabled=True,
+            context_personalization_enabled=True,
+        )
+
+        # Request with context
+        context = SearchContext(time_of_day="morning")
+        req = _make_request(
+            personalize=True,
+            user_id=uuid4(),
+            context=context,
+            explain=True,
+        )
+
+        resp = await orchestrator.search(req)
+
+        # Verify personalization service was called with context
+        mock_personalization.get_profile_info.assert_called_once_with(
+            req.user_id, req.tenant_id, context
+        )
+        mock_personalization.personalize_scores.assert_called_once()
+
+        # Verify response contains contextual debug info
+        assert resp.personalization is not None
+        assert resp.personalization.context_profile_key == "morning"
+        assert resp.personalization.applied is True
+        assert resp.personalization.profile_version == 3
+
+    @pytest.mark.asyncio
+    @patch("app.search.orchestrator.vector_search", new_callable=AsyncMock)
+    @patch("app.search.orchestrator.lexical_search", new_callable=AsyncMock)
+    async def test_context_personalization_disabled_flag(
+        self, mock_lex, mock_vec, orchestrator, config
+    ):
+        """PR-05: Context ignored when context_personalization_enabled=False."""
+        from app.api.schemas import SearchContext
+
+        # Mock search results
+        d1, d2 = uuid4(), uuid4()
+        mock_lex.return_value = [_lex_hit(d1, score=1.0), _lex_hit(d2, score=0.9)]
+        mock_vec.return_value = [_vec_hit(d1, score=0.8), _vec_hit(d2, score=0.7)]
+
+        # Mock personalization service
+        mock_profile_info = AsyncMock()
+        mock_profile_info.vector = [0.5] * 1024
+        mock_profile_info.profile_version = 2
+        mock_profile_info.click_count = 3
+        mock_profile_info.context_key = "default"
+
+        mock_personalization = AsyncMock()
+        mock_personalization.get_profile_info = AsyncMock(return_value=mock_profile_info)
+
+        # Create orchestrator with disabled context flag
+        orchestrator._personalization = mock_personalization
+        orchestrator._flags = FeatureFlags(
+            personalization_enabled=True,
+            context_personalization_enabled=False,  # disabled
+        )
+
+        # Request with context (should be ignored)
+        context = SearchContext(device="mobile")
+        req = _make_request(
+            personalize=True,
+            user_id=uuid4(),
+            context=context,
+            explain=True,
+        )
+
+        resp = await orchestrator.search(req)
+
+        # Verify personalization service was called with None context
+        mock_personalization.get_profile_info.assert_called_once_with(
+            req.user_id, req.tenant_id, None  # context ignored
+        )
+
+        # Verify response uses default context key
+        assert resp.personalization is not None
+        assert resp.personalization.context_profile_key == "default"

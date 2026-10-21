@@ -286,10 +286,18 @@ class SearchOrchestrator:
             and self._flags.personalization_enabled
             and self._personalization is not None
         ):
-            metrics.personalized_searches_total.labels(
-                tenant_id=str(req.tenant_id),
-                cold_start="false",  # Will be set in service
-            ).inc()
+            # Determine context (None if context personalization disabled)
+            context = (
+                req.context
+                if self._flags.context_personalization_enabled
+                else None
+            )
+
+            # Get profile info (contextual with fallback to default)
+            profile_info = await self._personalization.get_profile_info(
+                req.user_id, req.tenant_id, context
+            )
+
             # Build metadata for personalization
             meta = self._build_meta(lex_hits, vec_hits)
             # Re-embed top documents for personalization (title + snippet)
@@ -316,27 +324,24 @@ class SearchOrchestrator:
                     if i < len(embedded_vectors):
                         doc_vectors[doc_id] = embedded_vectors[i]
 
-                # Apply personalization scoring
+                # Apply personalization scoring (with optional profile override)
                 fused = await self._personalization.personalize_scores(
-                    fused, req.user_id, req.tenant_id, doc_vectors
+                    fused, req.user_id, req.tenant_id, doc_vectors, profile_vector=profile_info.vector
                 )
 
                 # Prepare debug info
-                profile_vector = await self._personalization.get_profile_vector(
-                    req.user_id, req.tenant_id
-                )
                 personalized_debug = {
                     "applied": True,
-                    "cold_start": profile_vector is None,
-                    "profile_version": getattr(profile_vector, "profile_version", 0)
-                    if profile_vector is not None
-                    else 0,
+                    "cold_start": profile_info.vector is None,
+                    "profile_version": profile_info.profile_version,
+                    "context_profile_key": profile_info.context_key,
                 }
                 logger.debug(
                     "Personalization applied",
                     extra={
                         "user_id": str(req.user_id),
-                        "cold_start": personalized_debug["cold_start"],
+                        "cold_start": profile_info.vector is None,
+                        "context_key": profile_info.context_key,
                     },
                 )
 

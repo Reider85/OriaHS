@@ -9,7 +9,6 @@ PostgreSQL jsonb key sort.
 """
 
 from datetime import date, datetime
-from typing import Dict
 
 from sqlalchemy import CheckConstraint, Date, DateTime, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -33,8 +32,8 @@ class ABExperiment(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     experiment_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    variants: Mapped[Dict[str, Dict[str, float]]] = mapped_column(JSONB, nullable=False)
-    weights: Mapped[Dict[str, float] | None] = mapped_column(JSONB, nullable=True)
+    variants: Mapped[dict[str, dict[str, float]]] = mapped_column(JSONB, nullable=False)
+    weights: Mapped[dict[str, float] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="active")
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)

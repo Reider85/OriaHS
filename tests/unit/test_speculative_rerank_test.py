@@ -269,7 +269,6 @@ class TestSpeculativeReranker:
 
         # Create mock tasks with lexical failure
         d1, d2 = uuid4(), uuid4()
-        lex_hits = []
         vec_hits = [
             VectorHit(doc_id=d1, score=0.7, title="doc1", content_snippet="content1"),
             VectorHit(doc_id=d2, score=0.5, title="doc2", content_snippet="content2"),

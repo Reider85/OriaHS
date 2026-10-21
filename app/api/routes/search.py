@@ -150,12 +150,27 @@ async def log_click(
 
             async def update_profile():
                 try:
+                    # Default profile update
+                    embedding_service = _get_embedding_service()
                     await personalization_service.update_on_click(
                         user_id=req.user_id,
                         tenant_id=req.tenant_id,
                         clicked_doc_id=req.clicked_doc_id,
-                        query=req.query,
+                        embedding_service=embedding_service,
                     )
+
+                    # Contextual profile update if context provided and flag on
+                    if (
+                        req.context is not None
+                        and settings.feature_flags.context_personalization_enabled
+                    ):
+                        await personalization_service.update_on_click_contextual(
+                            user_id=req.user_id,
+                            tenant_id=req.tenant_id,
+                            clicked_doc_id=req.clicked_doc_id,
+                            embedding_service=embedding_service,
+                            context=req.context,
+                        )
                 except Exception as e:
                     logger.warning(f"Failed to update user profile: {e}")
 

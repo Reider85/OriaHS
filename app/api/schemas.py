@@ -23,11 +23,12 @@ class SearchContext(BaseModel):
 
 
 class PersonalizationDebug(BaseModel):
-    """Debug information for personalized search (PR-01)."""
+    """Debug information for personalized search (PR-01, PR-05)."""
 
     applied: bool
     cold_start: bool
     profile_version: int
+    context_profile_key: str | None = None  # Context key used for personalization
 
 
 class IndexRequest(BaseModel):
@@ -250,10 +251,11 @@ class StopExperimentRequest(BaseModel):
 
 
 class ClickRequest(BaseModel):
-    """Body of ``POST /search/click`` (PR-02).
+    """Body of ``POST /search/click`` (PR-02, PR-05).
 
     Records user click interactions for analytics and personalization.
     tenant_id is required as search_events.tenant_id is NOT NULL.
+    context is used for contextual personalization updates (PR-05).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -264,3 +266,4 @@ class ClickRequest(BaseModel):
     clicked_doc_id: UUID
     position: int | None = None  # 1-based position in results, optional
     experiment_id: str | None = None  # A/B test identifier, optional
+    context: SearchContext | None = None  # for contextual personalization (PR-05)

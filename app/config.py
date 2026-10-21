@@ -185,6 +185,12 @@ class PersonalizationConfig(BaseSettings):
     profile_dimension: int = 1024
     gdpr_delete_endpoint_enabled: bool = True
 
+    # Contextual personalization settings (PR-05)
+    session_profile_alpha: float = Field(default=0.5, ge=0.0, le=1.0)
+    context_profile_alpha: float = Field(default=0.1, ge=0.0, le=1.0)
+    session_profile_ttl_hours: int = Field(default=24, ge=1)
+    context_timezone: str = "UTC"
+
 
 class ABTestingConfig(BaseSettings):
     """A/B testing configuration (sticky distribution, sequential testing)."""

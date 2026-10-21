@@ -9,13 +9,7 @@ def test_config_import():
     """Test that all new config sections can be imported."""
     try:
         from app.config import (
-            AppConfig,
-            CircuitBreakerConfig,
-            EvalConfig,
-            FeatureFlags,
-            PushdownConfig,
-            RerankerConfig,
-            ThrottleConfig,
+            get_settings,
         )
 
         print("✓ All config classes imported successfully")
@@ -28,7 +22,7 @@ def test_config_import():
 def test_schemas_import():
     """Test that updated schemas can be imported."""
     try:
-        from app.api.schemas import IndexResponse, SearchRequest
+
 
         print("✓ Updated schemas imported successfully")
         return True

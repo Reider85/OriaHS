@@ -365,7 +365,7 @@ class CriticalNFRTester:
         total_requests = 200
         successful_requests = 0
 
-        for i in range(total_requests):
+        for _i in range(total_requests):
             try:
                 data = {
                     "tenant_id": self.test_tenant,

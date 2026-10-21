@@ -13,6 +13,7 @@ from app.db.models.eval_result import EvalResult
 from app.db.models.outbox import OutboxItem
 from app.db.models.search_event import SearchEvent
 from app.db.models.user import User
+from app.db.models.user_context_profile import UserContextProfile
 
 __all__ = [
     "ABExperiment",
@@ -24,4 +25,5 @@ __all__ = [
     "EvalResult",
     "SearchEvent",
     "User",
+    "UserContextProfile",
 ]

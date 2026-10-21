@@ -68,11 +68,13 @@ def get_speculative_reranker() -> SpeculativeReranker:
     )
 
 
-def get_personalization_service() -> "type[PersonalizationService]":
+def get_personalization_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> "PersonalizationService":
     """Factory for PersonalizationService (session-bound, not cached)."""
     from app.services.personalization import PersonalizationService
 
-    return PersonalizationService
+    return PersonalizationService(session, get_settings().personalization)
 
 
 def get_ab_testing_service(

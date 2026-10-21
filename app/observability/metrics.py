@@ -194,6 +194,18 @@ profile_vector_dimension = Gauge(
     ["tenant_id"],
 )
 
+# Contextual personalization metrics (PR-05)
+contextual_profile_used_total = Counter(
+    "contextual_profile_used_total",
+    "Total number of contextual profiles used for personalization",
+    ["tenant_id", "context_key"],
+)
+session_profiles_expired_total = Counter(
+    "session_profiles_expired_total",
+    "Total number of expired session profiles cleaned up",
+    ["tenant_id"],
+)
+
 # ---------------------------------------------------------------------------
 # Push-down filter metrics — updated by SearchOrchestrator (C-10)
 # ---------------------------------------------------------------------------
