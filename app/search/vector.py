@@ -22,7 +22,6 @@ from qdrant_client.http.models import ScoredPoint
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.db.models.document import Document
 from app.embedding.cache import EmbeddingCache
 from app.embedding.service import EmbeddingService
@@ -32,8 +31,6 @@ from app.search.filters import SearchFilters
 
 SNIPPET_LENGTH = 200
 SEARCH_TIMEOUT_SECONDS = 0.1  # 100 ms hard budget on Qdrant round-trip
-COLLECTION_NAME = settings.qdrant.collection
-DEFAULT_MODEL_NAME = settings.embedding.model_name
 
 
 class VectorHit(BaseModel):
@@ -121,7 +118,8 @@ async def vector_search(
     query: str,
     tenant_id: UUID,
     filters: SearchFilters,
-    model_name: str | None = None,
+    collection_name: str,
+    model_name: str,
     k: int = 50,
     pushdown_ids: list[UUID] | None = None,
 ) -> list[VectorHit]:
@@ -145,7 +143,6 @@ async def vector_search(
         metrics.vector_search_latency_ms.labels(pushdown="true").observe(0.0)
         return []
 
-    model_name = model_name or DEFAULT_MODEL_NAME
     pushdown_label = "true" if pushdown_ids else "false"
 
     vec = await embedding_cache.get_query_embedding(query, model_name)
@@ -174,7 +171,7 @@ async def vector_search(
         try:
             scored = await asyncio.wait_for(
                 qdrant_client.search(
-                    collection_name=COLLECTION_NAME,
+                    collection_name=collection_name,
                     query_vector=vec.tolist(),
                     query_filter=qfilter,
                     limit=k,

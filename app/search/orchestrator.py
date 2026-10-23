@@ -51,6 +51,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import SearchHit, SearchRequest, SearchResponse
 from app.config import FeatureFlags, MMRConfig, RerankerConfig, SearchConfig
+from app.db.queries.model_migrations import get_active_search_target
 from app.db.redis_client import get_redis_client
 from app.embedding.cache import EmbeddingCache
 from app.embedding.service import EmbeddingService
@@ -596,6 +597,21 @@ class SearchOrchestrator:
                     },
                 )
 
+        # Get active search target (collection and model name)
+        try:
+            collection_name, model_name = get_active_search_target(self._session)
+        except Exception:
+            # Fallback to default settings if there's any error
+            collection_name = settings.qdrant.collection
+            model_name = settings.embedding.model_name
+            logger.warning(
+                "Failed to get active search target, using defaults",
+                extra={
+                    "collection": collection_name,
+                    "model": model_name,
+                },
+            )
+
         return await vector_search(
             self._session,
             self._qdrant,
@@ -604,6 +620,8 @@ class SearchOrchestrator:
             req.query,
             req.tenant_id,
             req.filters,
+            collection_name=collection_name,
+            model_name=model_name,
             k=self._config.k_vector,
             pushdown_ids=pushdown_ids,
         )

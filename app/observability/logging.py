@@ -32,7 +32,7 @@ def _json_renderer(logger: Any, method_name: str, event_dict: MutableMapping[str
     event_dict["level"] = method_name.upper()
     event_dict["request_id"] = request_id_ctx.get("")
     event_dict["tenant_id"] = tenant_id_ctx.get("")
-    
+
     # Use real OTel trace_id if available, fallback to placeholder
     try:
         from opentelemetry import trace
@@ -45,7 +45,7 @@ def _json_renderer(logger: Any, method_name: str, event_dict: MutableMapping[str
     except Exception:
         # Fallback to contextvar if OTel not available
         event_dict["trace_id"] = trace_id_ctx.get("")
-    
+
     return json.dumps(event_dict, default=str, ensure_ascii=False)
 
 

@@ -25,6 +25,7 @@ from app.db.models import Document
 from app.db.queries import documents as documents_queries
 from app.db.queries import outbox as outbox_queries
 from app.db.queries.embedding_models import get_active_model_by_name
+from app.db.queries.model_migrations import get_dual_write_targets
 from app.db.queries.outbox import PendingOutboxRow
 from app.db.redis_client import get_redis_client
 from app.db.session import async_session_factory
@@ -214,7 +215,10 @@ class ReconcilerWorker:
             await session.commit()
 
     async def _handle_upsert(self, session: AsyncSession, row: PendingOutboxRow) -> None:
-        """Embed document.content (or reuse cache) and upsert to Qdrant."""
+        """Embed document.content (or reuse cache) and upsert to Qdrant.
+        
+        Supports dual-write when a promoted migration exists (PR-07).
+        """
         document = await documents_queries.get_by_id(session, row.document_id)
         if document is None:
             raise ValueError(f"Document {row.document_id} not found for outbox row {row.id}")
@@ -222,6 +226,23 @@ class ReconcilerWorker:
         # Validate embedding model exists and is active
         await get_active_model_by_name(session, document.embedding_model)
 
+        # Check for dual-write targets (promoted migration)
+        dual_targets = get_dual_write_targets(session)
+
+        if dual_targets:
+            # Dual-write mode: compute vectors for each target and upsert to both collections
+            await self._handle_dual_write(session, row, document, dual_targets)
+        else:
+            # Single-write mode (normal operation)
+            await self._handle_single_write(session, row, document)
+
+    async def _handle_single_write(
+        self,
+        session: AsyncSession,
+        row: PendingOutboxRow,
+        document: Document
+    ) -> None:
+        """Handle single upsert (normal operation)."""
         target_hash = row.content_hash or document.content_hash
         existing_hash = await self._qdrant.get_point_content_hash(row.document_id)
         if should_skip_upsert(target_hash, existing_hash):
@@ -240,6 +261,109 @@ class ReconcilerWorker:
             content_hash=document.content_hash,
         ).model_dump(mode="json")
         await self._qdrant.upsert_point(document.id, vector.tolist(), payload)
+
+    async def _handle_dual_write(
+        self,
+        session: AsyncSession,
+        row: PendingOutboxRow,
+        document: Document,
+        dual_targets: list[tuple[str, str]]
+    ) -> None:
+        """Handle dual upsert (promoted migration mode).
+        
+        Computes vectors for each model and upserts to respective collections.
+        """
+        # Get document content
+        content = document.content
+
+        # Get or create embedding services for each target model
+        embedding_services = {}
+        for collection_name, model_name in dual_targets:
+            if model_name not in embedding_services:
+                # Create or get embedding service for this model
+                service = self._get_embedding_service_for_model(model_name)
+                embedding_services[model_name] = service
+
+        # Compute vectors for each model
+        vectors = {}
+        for collection_name, model_name in dual_targets:
+            service = embedding_services[model_name]
+            # Check cache first
+            cache = self._get_cache_for_model(model_name)
+            target_hash = row.content_hash or document.content_hash
+            existing_hash = await self._qdrant.get_point_content_hash(
+                row.document_id,
+                collection_name=collection_name
+            )
+
+            if should_skip_upsert(target_hash, existing_hash):
+                # Use existing vector from Qdrant
+                points = await self._qdrant.retrieve_points(
+                    [row.document_id],
+                    collection_name=collection_name,
+                    with_vector=True
+                )
+                if points:
+                    vectors[collection_name] = np.array(points[0].vector)
+                else:
+                    # Compute new vector
+                    embedded_vectors = await service.embed_texts([content])
+                    vectors[collection_name] = np.array(embedded_vectors[0])
+            else:
+                # Compute new vector
+                embedded_vectors = await service.embed_texts([content])
+                vectors[collection_name] = np.array(embedded_vectors[0])
+
+        # Upsert to each target collection
+        for collection_name, model_name in dual_targets:
+            vector = vectors[collection_name]
+            payload = QdrantPayload(
+                doc_id=document.id,
+                tenant_id=document.tenant_id,
+                language=document.language,
+                tags=document.tags,
+                attributes=document.attributes,
+                model_name=model_name,  # Use the model name for this collection
+                model_rev=document.embedding_rev,
+                created_at=document.created_at,
+                content_hash=document.content_hash,
+            ).model_dump(mode="json")
+            await self._qdrant.upsert_point(
+                document.id,
+                vector.tolist(),
+                payload,
+                collection_name=collection_name
+            )
+
+    def _get_embedding_service_for_model(self, model_name: str) -> EmbeddingService:
+        """Get or create embedding service for a specific model."""
+        # Check if we already have a service for this model
+        if not hasattr(self, '_embedding_services'):
+            self._embedding_services = {}
+
+        if model_name not in self._embedding_services:
+            # Create new service for this model
+            config = EmbeddingConfig(
+                model_name=model_name,
+                hf_model=settings.embedding.hf_model,  # TODO: Get model-specific HF ID
+                expected_dimension=settings.embedding.expected_dimension,
+                device=settings.embedding.device,
+                cache=self._get_cache_for_model(model_name),
+            )
+            self._embedding_services[model_name] = EmbeddingService(config=config)
+
+        return self._embedding_services[model_name]
+
+    def _get_cache_for_model(self, model_name: str) -> EmbeddingCache:
+        """Get or create cache for a specific model."""
+        # Check if we already have a cache for this model
+        if not hasattr(self, '_caches'):
+            self._caches = {}
+
+        if model_name not in self._caches:
+            self._caches[model_name] = EmbeddingCache(get_redis_client())
+
+        return self._caches[model_name]
 
     async def _get_document_vector(self, document: Document) -> np.ndarray:
         """Content-hash cache lookup → compute → store (ARCHITECT §4.3, §5.3)."""

@@ -22,7 +22,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = str(uuid.uuid4())
         rid_token = request_id_ctx.set(request_id)
-        
+
         # Set trace_id contextvar for non-OTel contexts
         try:
             from opentelemetry import trace
@@ -35,7 +35,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
                 trace_id = request_id
         except Exception:
             trace_id = request_id  # Fallback
-        
+
         tid_token = trace_id_ctx.set(trace_id)
         try:
             response = await call_next(request)

@@ -62,10 +62,14 @@ class EmbeddingConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EMBEDDING_", env_file=".env", extra="ignore")
 
     model_name: str = "bge-m3-v1"
+    hf_model: str = "BAAI/bge-m3"  # HuggingFace model ID
+    expected_dimension: int | None = None  # Expected embedding dimension (default: 1024)
     batch_size: int = Field(default=32, ge=1)
     max_length: int = Field(default=512, ge=1)
     cache_ttl_seconds: int = Field(default=2592000, ge=0)
     device: str = "auto"  # "auto" | "cuda" | "cpu"
+    # Migration support for arbitrary model names
+    hf_model_v2: str = "BAAI/bge-m3"  # HuggingFace model ID for v2 migration
 
 
 class SearchConfig(BaseSettings):
@@ -104,6 +108,7 @@ class ObservabilityConfig(BaseSettings):
     otel_endpoint: str = "http://otel-collector:4317"
     metrics_path: str = "/metrics"
     log_level: str = "INFO"
+    # Total metrics: 29 base + 5 migration = 34 total metrics
 
 
 class RerankerConfig(BaseSettings):
@@ -228,6 +233,23 @@ class MigrationConfig(BaseSettings):
     snapshot_retention_days: int = 30
     snapshot_s3_bucket: str = "oriahs-qdrant-snapshots"
     rollback_timeout_minutes: int = 30
+
+    # S3 configuration for snapshots
+    snapshot_s3_endpoint_url: str = "http://minio:9000"
+    snapshot_s3_access_key: str = "minioadmin"
+    snapshot_s3_secret_key: str = "minioadmin"
+
+    # Search collection override for migration
+    search_collection: str | None = None
+
+    # Collection naming
+    collection_suffix: str = "_v2"
+
+    # Canary and backfill limits
+    max_canary_docs: int = 5000
+
+    # Cleanup configuration
+    stable_days: int = 7
 
 
 class SearchEventsConfig(BaseSettings):

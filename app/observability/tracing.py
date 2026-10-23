@@ -14,7 +14,6 @@ import logging
 from contextlib import contextmanager
 from typing import Any, ContextManager
 
-import numpy as np
 import structlog
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -25,7 +24,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Span, Tracer
 
-from app.config import TracingConfig, FeatureFlags
+from app.config import FeatureFlags, TracingConfig
 from app.observability.metrics import CountingSpanExporter
 
 logger = logging.getLogger(__name__)
@@ -65,10 +64,10 @@ def setup_tracing(app: Any, config: TracingConfig, feature_flags: FeatureFlags) 
         endpoint=config.otel_endpoint,
         insecure=True,
     )
-    
+
     # Wrap exporter with Prometheus metrics counter
     counting_exporter = CountingSpanExporter(base_exporter, job_name=config.service_name)
-    
+
     span_processor = BatchSpanProcessor(
         counting_exporter,
         export_timeout_ms=config.export_interval_ms,
@@ -156,8 +155,9 @@ def hash_user_id(user_id: Any) -> str:
 
 def _setup_logging_handler() -> None:
     """Bridge structlog to OTel logs for trace correlation."""
-    from opentelemetry.sdk.logging import LoggingHandler
     import logging as stdlib_logging
+
+    from opentelemetry.sdk.logging import LoggingHandler
 
     # Create OTel logger
     otel_logger = stdlib_logging.getLogger("oriahs.structlog")
@@ -181,7 +181,7 @@ def _setup_logging_handler() -> None:
             # Get current span context for correlation
             current_span = trace.get_current_span()
             span_context = current_span.get_span_context() if current_span else None
-            
+
             # Create OTel log record
             otel_logger.log(
                 getattr(stdlib_logging, method_name.upper(), stdlib_logging.INFO),
@@ -189,7 +189,7 @@ def _setup_logging_handler() -> None:
                 extra={
                     "otel.event.name": event_dict.get("event", ""),
                     "otel.event.attributes": {
-                        k: v for k, v in event_dict.items() 
+                        k: v for k, v in event_dict.items()
                         if k not in ("event", "timestamp", "level", "logger")
                     },
                     **({"trace.id": span_context.trace_id} if span_context else {}),
@@ -197,7 +197,7 @@ def _setup_logging_handler() -> None:
                 }
             )
             event_dict["_otel_handled"] = True
-        
+
         return event_dict
 
     # Add processor to structlog

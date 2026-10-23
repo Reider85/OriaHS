@@ -340,6 +340,38 @@ mmr_lambda_param = Gauge(
     "Lambda parameter used in last MMR operation.",
 )
 
+# ---------------------------------------------------------------------------
+# Migration framework metrics — filled by MigrationService (PR-07)
+# ---------------------------------------------------------------------------
+migration_backfill_progress = Gauge(
+    "migration_backfill_progress",
+    "Backfill progress as a percentage (0-100).",
+    labelnames=["migration_id"],
+)
+
+migration_backfill_speed = Gauge(
+    "migration_backfill_speed",
+    "Backfill speed in documents per hour.",
+    labelnames=["migration_id"],
+)
+
+migration_canary_similarity = Gauge(
+    "migration_canary_similarity",
+    "Canary reindex similarity scores.",
+    labelnames=["migration_id", "kind"],  # "avg", "min", "max"
+)
+
+migration_snapshots_created_total = Counter(
+    "migration_snapshots_created_total",
+    "Total Qdrant snapshots created for migrations.",
+    labelnames=["collection"],
+)
+
+migration_rollbacks_total = Counter(
+    "migration_rollbacks_total",
+    "Total migration rollbacks performed.",
+)
+
 __all__ = [
     "dead_letter_count",
     "dead_letters_total",
@@ -379,6 +411,12 @@ __all__ = [
     "mmr_diversify_total",
     "mmr_diversity_score",
     "mmr_lambda_param",
+    # Migration framework metrics (PR-07)
+    "migration_backfill_progress",
+    "migration_backfill_speed",
+    "migration_canary_similarity",
+    "migration_snapshots_created_total",
+    "migration_rollbacks_total",
     # OpenTelemetry tracing metrics
     "otel_spans_exported_total",
     "otel_export_errors_total",
@@ -397,27 +435,27 @@ class CountingSpanExporter(SpanExporter):
     This exporter tracks successful exports and errors in Prometheus metrics
     while delegating actual export to the wrapped exporter (e.g., OTLPExporter).
     """
-    
+
     def __init__(self, wrapped_exporter: SpanExporter, job_name: str = "oriahs"):
         self.wrapped_exporter = wrapped_exporter
         self.job_name = job_name
-    
+
     def export(self, spans: list) -> SpanExportResult:
         """Export spans and increment metrics."""
         try:
             # Delegate to wrapped exporter
             result = self.wrapped_exporter.export(spans)
-            
+
             # Increment success counter
             otel_spans_exported_total.labels(job=self.job_name).inc(len(spans))
-            
+
             return result
         except Exception as exc:
             # Increment error counter
             error_type = type(exc).__name__
             otel_export_errors_total.labels(job=self.job_name, error_type=error_type).inc()
             raise
-    
+
     def shutdown(self) -> None:
         """Shutdown the wrapped exporter."""
         self.wrapped_exporter.shutdown()

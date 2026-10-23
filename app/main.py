@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan events (C-01: optional reranker warmup, PR-06: tracing setup)."""
     # Initialize OpenTelemetry tracing if enabled
     setup_tracing(app, settings.tracing, settings.feature_flags)
-    
+
     if settings.reranker.warmup:
         logger = logging.getLogger(__name__)
         logger.info("Warming up reranker model...")

@@ -55,22 +55,31 @@ class EmbeddingService:
         if device == "cpu":
             logger.warning("CUDA not available, running embedding model on CPU (slow)")
         t0 = time.perf_counter()
-        model = SentenceTransformer("BAAI/bge-m3", device=device)
+
+        # Use the HF model ID from config, default to model name
+        hf_model = self._config.hf_model or self._config.model_name
+        model = SentenceTransformer(hf_model, device=device)
         model.max_seq_length = self._config.max_length
+
         get_dimension = (
             getattr(model, "get_embedding_dimension", None)
             or model.get_sentence_embedding_dimension
         )
         dim = get_dimension()
         load_ms = (time.perf_counter() - t0) * 1000
-        if dim != EXPECTED_DIMENSION:
+
+        # Check expected dimension if configured
+        expected_dim = self._config.expected_dimension or EXPECTED_DIMENSION
+        if dim != expected_dim:
             raise RuntimeError(
-                f"Model dimension mismatch: expected {EXPECTED_DIMENSION}, got {dim}"
+                f"Model dimension mismatch: expected {expected_dim}, got {dim}"
             )
+
         logger.info(
             "Embedding model loaded",
             extra={
                 "model": self._config.model_name,
+                "hf_model": hf_model,
                 "device": device,
                 "dim": dim,
                 "load_ms": round(load_ms, 1),
@@ -102,7 +111,8 @@ class EmbeddingService:
     async def embed_texts(self, texts: list[str]) -> np.ndarray:
         """Encode a list of texts into normalized float32 embeddings."""
         if not texts:
-            return np.empty((0, EXPECTED_DIMENSION), dtype=np.float32)
+            expected_dim = self._config.expected_dimension or EXPECTED_DIMENSION
+            return np.empty((0, expected_dim), dtype=np.float32)
         if self._cache is None:
             return await self._encode(texts)
         vectors = await self._cache.compute_with_cache(texts, self._config.model_name, self._encode)
