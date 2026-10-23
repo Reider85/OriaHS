@@ -1,6 +1,6 @@
-"""Unit tests for Prometheus metrics (P-15, C-12 Critical, ARCHITECT §11.1).
+"""Unit tests for Prometheus metrics (P-15, C-12 Critical, PR-06 Tracing, ARCHITECT §11.1).
 
-Verifies that all 27 metrics (7 MVP + 15 Critical + 3 extras + 2 B-09) are registered in the default
+Verifies that all 29 metrics (7 MVP + 15 Critical + 3 extras + 2 B-09 + 2 OTel) are registered in the default
 Prometheus registry and that increment/observe operations update the exposed values.
 """
 

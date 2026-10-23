@@ -12,8 +12,10 @@ from sentence_transformers import SentenceTransformer
 
 from app.config import EmbeddingConfig
 from app.embedding.cache import EmbeddingCache
+from app.observability.tracing import get_tracer, span
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer("embedding.service")
 
 EXPECTED_DIMENSION = 1024
 
@@ -106,8 +108,13 @@ class EmbeddingService:
         vectors = await self._cache.compute_with_cache(texts, self._config.model_name, self._encode)
         return np.asarray(vectors, dtype=np.float32)
 
+    @span(tracer, "embedding.query", attributes={
+        "cache_hit": lambda: cached is not None,
+        "model_name": lambda: self._config.model_name,
+    })
     async def embed_query(self, query: str) -> np.ndarray:
         """Encode a single query string (used by search channels)."""
+        cached = None
         if self._cache is not None:
             cached = await self._cache.get_query_embedding(query, self._config.model_name)
             if cached is not None:

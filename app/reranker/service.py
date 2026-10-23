@@ -15,10 +15,12 @@ from FlagEmbedding import FlagReranker
 
 from app.config import RerankerConfig
 from app.observability import metrics
+from app.observability.tracing import get_tracer, span
 from app.reranker.exceptions import RerankerTimeoutException, RerankerUnavailableException
 from app.reranker.schemas import RerankCandidate, RerankResult
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer("reranker.service")
 
 
 class RerankerService:
@@ -48,6 +50,12 @@ class RerankerService:
             return
         await self._lazy_load()
 
+    @span(tracer, "rerank", attributes={
+        "n_docs": lambda: len(docs),
+        "device": "cpu",  # fallback since self._device might not be set
+        "mock_mode": lambda: self._config.mock_mode,
+        "inference_ms": 0,  # will be updated after computation
+    })
     async def rerank(
         self, query: str, docs: list[RerankCandidate], top_k: int | None = None
     ) -> list[RerankResult]:

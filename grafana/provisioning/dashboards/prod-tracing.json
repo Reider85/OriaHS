@@ -1,0 +1,324 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "prometheus",
+      "description": "Total spans exported to Tempo (success + errors)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {},
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.2.3",
+      "targets": [
+        {
+          "datasource": "prometheus",
+          "exemplar": true,
+          "expr": "otel_spans_exported_total",
+          "instant": false,
+          "interval": "",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ],
+      "title": "OTel Spans Exported",
+      "type": "stat"
+    },
+    {
+      "datasource": "prometheus",
+      "description": "Total span export errors (retry or failure)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {},
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.2.3",
+      "targets": [
+        {
+          "datasource": "prometheus",
+          "exemplar": true,
+          "expr": "otel_export_errors_total",
+          "instant": false,
+          "interval": "",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ],
+      "title": "OTel Export Errors",
+      "type": "stat"
+    },
+    {
+      "datasource": "prometheus",
+      "description": "Search latency with trace breakdown",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "Latency (ms)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholds": []
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 200
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": "prometheus",
+          "exemplar": true,
+          "expr": "histogram_quantile(0.99, sum(rate(search_latency_ms_bucket[5m])) by (le))",
+          "interval": "",
+          "legendFormat": "P99 Search Latency",
+          "refId": "A"
+        },
+        {
+          "datasource": "prometheus",
+          "exemplar": true,
+          "expr": "histogram_quantile(0.95, sum(rate(search_latency_ms_bucket[5m])) by (le))",
+          "interval": "",
+          "legendFormat": "P95 Search Latency",
+          "refId": "B"
+        },
+        {
+          "datasource": "prometheus",
+          "exemplar": true,
+          "expr": "histogram_quantile(0.50, sum(rate(search_latency_ms_bucket[5m])) by (le))",
+          "interval": "",
+          "legendFormat": "P50 Search Latency",
+          "refId": "C"
+        }
+      ],
+      "title": "Search Latency Distribution",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "tempo",
+      "description": "Open Tempo traces with linked logs",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 4,
+      "options": {
+        "explore": {
+          "left": {
+            "datasources": [
+              {
+                "name": "tempo",
+                "uid": "tempo"
+              }
+            ],
+            "queries": [
+              {
+                "query": "search {job=\"oriahs\"}",
+                "refId": "A",
+                "range": true
+              }
+            ],
+            "range": {
+              "from": "now-1h",
+              "to": "now"
+            }
+          }
+        },
+        "leftMinWidth": 200,
+        "showLabels": false,
+        "showTime": true,
+        "showToolbar": true,
+        "textFormatOptions": {
+          "maxLen": 30,
+          "maxLines": 1,
+          "wrap": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": "tempo",
+          "query": "search {job=\"oriahs\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Distributed Traces",
+      "type": "traceView"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["production", "tracing", "distributed"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Distributed Tracing",
+  "uid": "prod-tracing",
+  "version": 1,
+  "weekStart": ""
+}

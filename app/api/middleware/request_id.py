@@ -22,7 +22,21 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = str(uuid.uuid4())
         rid_token = request_id_ctx.set(request_id)
-        tid_token = trace_id_ctx.set(request_id)  # placeholder until OTel (§11.2)
+        
+        # Set trace_id contextvar for non-OTel contexts
+        try:
+            from opentelemetry import trace
+            current_span = trace.get_current_span()
+            if current_span and current_span.get_span_context().trace_id:
+                # Use OTel trace_id if available (32-char hex)
+                trace_id = f"{current_span.get_span_context().trace_id:032x}"
+            else:
+                # Fallback to request_id for backward compatibility
+                trace_id = request_id
+        except Exception:
+            trace_id = request_id  # Fallback
+        
+        tid_token = trace_id_ctx.set(trace_id)
         try:
             response = await call_next(request)
         finally:

@@ -78,6 +78,21 @@ embedding_cache_requests_total = Counter(
 )
 
 # ---------------------------------------------------------------------------
+# OpenTelemetry tracing metrics — incremented by CountingSpanExporter
+# ---------------------------------------------------------------------------
+otel_spans_exported_total = Counter(
+    "otel_spans_exported_total",
+    "Total spans successfully exported to OTel collector.",
+    labelnames=["job"],
+)
+
+otel_export_errors_total = Counter(
+    "otel_export_errors_total",
+    "Total span export failures (retries or errors).",
+    labelnames=["job", "error_type"],
+)
+
+# ---------------------------------------------------------------------------
 # Dead-letter gauge — periodically refreshed by ReconcilerWorker
 # ---------------------------------------------------------------------------
 dead_letter_count = Gauge(
@@ -364,4 +379,45 @@ __all__ = [
     "mmr_diversify_total",
     "mmr_diversity_score",
     "mmr_lambda_param",
+    # OpenTelemetry tracing metrics
+    "otel_spans_exported_total",
+    "otel_export_errors_total",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Custom OTel Span Exporter with Prometheus metrics
+# ---------------------------------------------------------------------------
+from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+
+
+class CountingSpanExporter(SpanExporter):
+    """OTel SpanExporter that wraps another exporter and increments Prometheus counters.
+    
+    This exporter tracks successful exports and errors in Prometheus metrics
+    while delegating actual export to the wrapped exporter (e.g., OTLPExporter).
+    """
+    
+    def __init__(self, wrapped_exporter: SpanExporter, job_name: str = "oriahs"):
+        self.wrapped_exporter = wrapped_exporter
+        self.job_name = job_name
+    
+    def export(self, spans: list) -> SpanExportResult:
+        """Export spans and increment metrics."""
+        try:
+            # Delegate to wrapped exporter
+            result = self.wrapped_exporter.export(spans)
+            
+            # Increment success counter
+            otel_spans_exported_total.labels(job=self.job_name).inc(len(spans))
+            
+            return result
+        except Exception as exc:
+            # Increment error counter
+            error_type = type(exc).__name__
+            otel_export_errors_total.labels(job=self.job_name, error_type=error_type).inc()
+            raise
+    
+    def shutdown(self) -> None:
+        """Shutdown the wrapped exporter."""
+        self.wrapped_exporter.shutdown()

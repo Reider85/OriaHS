@@ -55,6 +55,7 @@ from app.db.redis_client import get_redis_client
 from app.embedding.cache import EmbeddingCache
 from app.embedding.service import EmbeddingService
 from app.observability import metrics
+from app.observability.tracing import get_tracer, span
 from app.reranker.circuit_breaker import CircuitBreakerOpen, RerankerCircuitBreaker
 from app.reranker.exceptions import RerankerTimeoutException, RerankerUnavailableException
 from app.reranker.schemas import RerankCandidate, RerankResult
@@ -78,6 +79,7 @@ if TYPE_CHECKING:
     from app.services.ab_testing import ABTestingService
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer("search.orchestrator")
 
 # Sentinel returned by the rerank helpers when a pass produced no usable scores.
 _NO_RERANK: dict[UUID, float] = {}
@@ -166,6 +168,18 @@ class SearchOrchestrator:
         self._ab_testing = ab_testing_service
         self._mmr_config = mmr_config or MMRConfig()
 
+    @span(tracer, "search.request", attributes={
+        "query_lang": "unknown",  # TODO: detect with langdetect if needed
+        "fusion": lambda: req.fusion,
+        "experiment_id": lambda: req.experiment_id,
+        "user_id_hashed": lambda: str(req.user_id) if req.user_id else None,
+        "tenant_id": lambda: str(req.tenant_id),
+        "rerank": lambda: req.rerank,
+        "personalize": lambda: req.personalize,
+        "diversify": lambda: req.diversify,
+        "degraded": False,  # Set later
+        "latency_ms": 0,  # Set later
+    })
     async def search(self, req: SearchRequest) -> SearchResponse:
         """Execute the full search pipeline: channels → fusion → rerank.
 
@@ -286,64 +300,69 @@ class SearchOrchestrator:
             and self._flags.personalization_enabled
             and self._personalization is not None
         ):
-            # Determine context (None if context personalization disabled)
-            context = (
-                req.context
-                if self._flags.context_personalization_enabled
-                else None
-            )
-
-            # Get profile info (contextual with fallback to default)
-            profile_info = await self._personalization.get_profile_info(
-                req.user_id, req.tenant_id, context
-            )
-
-            # Build metadata for personalization
-            meta = self._build_meta(lex_hits, vec_hits)
-            # Re-embed top documents for personalization (title + snippet)
-            personalized_docs: list[str] = []
-            personalized_ids: list[UUID] = []
-
-            # Use top-K documents for personalization (limit to avoid excessive embedding)
-            limit = min(len(fused), req.top_k * 2)
-            for doc_id, _ in fused[:limit]:
-                # Build text from metadata (title + snippet)
-                title = meta[0].get(doc_id, "")  # titles from _build_meta
-                snippet = meta[1].get(doc_id, "")  # snippets from _build_meta
-                if title or snippet:
-                    text = f"{title}\n{snippet}"
-                    personalized_docs.append(text)
-                    personalized_ids.append(doc_id)
-
-            if personalized_docs:
-                # Re-embed documents using the embedding service (cache-backed)
-                embedded_vectors = await self._emb_svc.embed_texts(personalized_docs)
-
-                # Map embeddings back to doc_ids
-                for i, doc_id in enumerate(personalized_ids):
-                    if i < len(embedded_vectors):
-                        doc_vectors[doc_id] = embedded_vectors[i]
-
-                # Apply personalization scoring (with optional profile override)
-                fused = await self._personalization.personalize_scores(
-                    fused, req.user_id, req.tenant_id, doc_vectors, profile_vector=profile_info.vector
+            with span(tracer, "personalize", attributes={
+                "cold_start": lambda: profile_info.vector is None,
+                "profile_version": lambda: profile_info.profile_version,
+                "context_profile_key": lambda: profile_info.context_key,
+            }):
+                # Determine context (None if context personalization disabled)
+                context = (
+                    req.context
+                    if self._flags.context_personalization_enabled
+                    else None
                 )
 
-                # Prepare debug info
-                personalized_debug = {
-                    "applied": True,
-                    "cold_start": profile_info.vector is None,
-                    "profile_version": profile_info.profile_version,
-                    "context_profile_key": profile_info.context_key,
-                }
-                logger.debug(
-                    "Personalization applied",
-                    extra={
-                        "user_id": str(req.user_id),
+                # Get profile info (contextual with fallback to default)
+                profile_info = await self._personalization.get_profile_info(
+                    req.user_id, req.tenant_id, context
+                )
+
+                # Build metadata for personalization
+                meta = self._build_meta(lex_hits, vec_hits)
+                # Re-embed top documents for personalization (title + snippet)
+                personalized_docs: list[str] = []
+                personalized_ids: list[UUID] = []
+
+                # Use top-K documents for personalization (limit to avoid excessive embedding)
+                limit = min(len(fused), req.top_k * 2)
+                for doc_id, _ in fused[:limit]:
+                    # Build text from metadata (title + snippet)
+                    title = meta[0].get(doc_id, "")  # titles from _build_meta
+                    snippet = meta[1].get(doc_id, "")  # snippets from _build_meta
+                    if title or snippet:
+                        text = f"{title}\n{snippet}"
+                        personalized_docs.append(text)
+                        personalized_ids.append(doc_id)
+
+                if personalized_docs:
+                    # Re-embed documents using the embedding service (cache-backed)
+                    embedded_vectors = await self._emb_svc.embed_texts(personalized_docs)
+
+                    # Map embeddings back to doc_ids
+                    for i, doc_id in enumerate(personalized_ids):
+                        if i < len(embedded_vectors):
+                            doc_vectors[doc_id] = embedded_vectors[i]
+
+                    # Apply personalization scoring (with optional profile override)
+                    fused = await self._personalization.personalize_scores(
+                        fused, req.user_id, req.tenant_id, doc_vectors, profile_vector=profile_info.vector
+                    )
+
+                    # Prepare debug info
+                    personalized_debug = {
+                        "applied": True,
                         "cold_start": profile_info.vector is None,
-                        "context_key": profile_info.context_key,
-                    },
-                )
+                        "profile_version": profile_info.profile_version,
+                        "context_profile_key": profile_info.context_key,
+                    }
+                    logger.debug(
+                        "Personalization applied",
+                        extra={
+                            "user_id": str(req.user_id),
+                            "cold_start": profile_info.vector is None,
+                            "context_key": profile_info.context_key,
+                        },
+                    )
 
         rerank_scores = outcome.rerank_scores
         rerank_applied = bool(rerank_scores)
@@ -443,20 +462,31 @@ class SearchOrchestrator:
         # Compute facets on the top-K results if requested
         facets = {}
         if req.facets and ranked:
-            doc_ids = [doc_id for doc_id, _, _, _ in ranked[: req.top_k]]
-            try:
-                facets = await compute_facets(
-                    doc_ids=doc_ids,
-                    session=self._session,
-                    facet_fields=req.facets,
-                    top_n=req.facet_top_n,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Facets computation failed, returning empty", extra={"error": str(exc)}
-                )
+            with span(tracer, "pg.facets", attributes={
+                "n_fields": lambda: len(req.facets),
+                "top_n": lambda: req.facet_top_n,
+            }):
+                doc_ids = [doc_id for doc_id, _, _, _ in ranked[: req.top_k]]
+                try:
+                    facets = await compute_facets(
+                        doc_ids=doc_ids,
+                        session=self._session,
+                        facet_fields=req.facets,
+                        top_n=req.facet_top_n,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Facets computation failed, returning empty", extra={"error": str(exc)}
+                    )
 
         latency_ms = int((time.monotonic() - start) * 1000)
+
+        # Update span attributes with final metrics
+        current_span = trace.get_current_span()
+        if current_span:
+            current_span.set_attribute("latency_ms", latency_ms)
+            current_span.set_attribute("degraded", degraded)
+
         metrics.search_latency_ms.labels(tenant_id=str(req.tenant_id), fusion=req.fusion).observe(
             latency_ms
         )
@@ -522,6 +552,10 @@ class SearchOrchestrator:
     # Channels
     # ------------------------------------------------------------------
 
+    @span(tracer, "pg.lexical", attributes={
+        "k": lambda: self._config.k_lexical,
+        "query_len": lambda: len(req.query),
+    })
     async def _lexical_channel(self, req: SearchRequest) -> list[LexicalHit]:
         return await lexical_search(
             self._session,
@@ -531,6 +565,11 @@ class SearchOrchestrator:
             k=self._config.k_lexical,
         )
 
+    @span(tracer, "qdrant.vector", attributes={
+        "k": lambda: self._config.k_vector,
+        "pushdown": lambda: self._flags.pushdown_enabled,
+        "pushdown_count": lambda: len(pushdown_ids) if pushdown_ids else 0,
+    })
     async def _vector_channel(self, req: SearchRequest) -> list[VectorHit]:
         pushdown_ids: list[UUID] | None = None
 
@@ -868,6 +907,11 @@ class SearchOrchestrator:
     # Fusion and response assembly
     # ------------------------------------------------------------------
 
+    @span(tracer, "fusion", attributes={
+        "strategy": lambda: req.fusion,
+        "alpha": lambda: req.fusion_alpha if req.fusion == "weighted" else None,
+        "rrf_k": lambda: self._config.rrf_k,
+    })
     def _fuse(
         self,
         req: SearchRequest,

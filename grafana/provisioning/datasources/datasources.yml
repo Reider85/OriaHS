@@ -16,6 +16,53 @@ datasources:
       queryTimeout: 60s
       timeInterval: 15s
 
+  - name: Tempo
+    type: tempo
+    access: proxy
+    orgId: 1
+    url: http://tempo:3200
+    uid: tempo
+    basicAuth: false
+    isDefault: false
+    version: 1
+    editable: false
+    jsonData:
+      tracesToLogs:
+        datasourceUid: loki
+        filter: ""
+        # Derived field: trace_id in Loki logs links to Tempo trace
+        # Example: {job="oriahs", trace_id="<trace_id>"}
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanDurationMetricName: span_duration_seconds
+        spanMetricsQuery: |
+          sum(rate({job="oriahs"}[5m])) by (span_name)
+      tracesToProfiles:
+        datasourceUid: tempo
+        profileFilters: ""
+      queryTimeout: 60s
+      maxLines: 1000
+
+  - name: Loki
+    type: loki
+    access: proxy
+    orgId: 1
+    url: http://loki:3100
+    uid: loki
+    basicAuth: false
+    isDefault: false
+    version: 1
+    editable: false
+    jsonData:
+      derivedFields:
+        # Derived field: trace_id in Loki logs links to Tempo trace
+        - matcher: '{job="oriahs"}'
+          name: trace_id
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+      maxLines: 1000
+      queryTimeout: 60s
+
   - name: PostgreSQL
     type: postgres
     access: proxy

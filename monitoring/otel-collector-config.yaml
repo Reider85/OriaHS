@@ -35,4 +35,12 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
+      exporters: [otlp]
+      # Export logs to Loki via OTLP/HTTP (Loki 3.x supports OTLP on /otlp endpoint)
+      # Note: app logs will be sent via OTel LoggingHandler → OTLP gRPC → collector → Loki
+      # This enables trace↔log correlation in Grafana
+      otlp:
+        endpoint: http://loki:3100/otlp
+        compression: none
+        tls:
+          insecure: true

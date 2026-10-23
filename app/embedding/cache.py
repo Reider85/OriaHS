@@ -20,6 +20,9 @@ import numpy as np
 import redis.asyncio as aioredis
 
 from app.observability import metrics
+from app.observability.tracing import get_tracer, span
+
+tracer = get_tracer("embedding.cache")
 
 CONTENT_HASH_TTL_SECONDS = 2592000  # 30 days
 QUERY_EMBEDDING_TTL_SECONDS = 3600  # 1 hour
@@ -76,6 +79,10 @@ class EmbeddingCache:
             ex=CONTENT_HASH_TTL_SECONDS,
         )
 
+    @span(tracer, "redis.cache_lookup", attributes={
+        "type": "content_hash",
+        "batch_size": lambda: len(items),
+    })
     async def mget_by_content_hash(self, items: list[tuple[str, str]]) -> list[np.ndarray | None]:
         """Batch lookup; one round-trip. Returns ``None`` for cache misses."""
         if not items:
@@ -94,6 +101,10 @@ class EmbeddingCache:
         metrics.embedding_cache_hits_total.inc(hits)
         return result
 
+    @span(tracer, "redis.cache_lookup", attributes={
+        "type": "query_embedding",
+        "model_name": lambda: model_name,
+    })
     async def get_query_embedding(self, query: str, model_name: str) -> np.ndarray | None:
         metrics.embedding_cache_requests_total.inc()
         raw = await self._redis.get(self._query_key(query, model_name))

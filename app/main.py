@@ -18,11 +18,15 @@ from app.api.routes import experiments, health, index, search, users
 from app.config import settings
 from app.observability import metrics  # noqa: F401 - registers all Prometheus collectors
 from app.observability.logging import setup_logging
+from app.observability.tracing import setup_tracing
 from app.reranker.service import RerankerService
 
 
 async def lifespan(app: FastAPI):
-    """Application lifespan events (C-01: optional reranker warmup)."""
+    """Application lifespan events (C-01: optional reranker warmup, PR-06: tracing setup)."""
+    # Initialize OpenTelemetry tracing if enabled
+    setup_tracing(app, settings.tracing, settings.feature_flags)
+    
     if settings.reranker.warmup:
         logger = logging.getLogger(__name__)
         logger.info("Warming up reranker model...")
