@@ -47,7 +47,7 @@ class SearchEvent(Base):
     fusion_strategy: Mapped[str | None] = mapped_column(nullable=True)
     experiment_id: Mapped[str | None] = mapped_column(nullable=True)
     variant: Mapped[str | None] = mapped_column(
-        nullable=True
+        nullable=True, server_default="control"
     )  # A/B variant (PR-03), shadow traffic (PR-08)
     latency_ms: Mapped[int | None] = mapped_column(nullable=True)
 

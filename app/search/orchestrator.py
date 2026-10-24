@@ -75,6 +75,7 @@ from app.search.pushdown import maybe_pushdown
 from app.search.speculative import SpeculativeReranker
 from app.search.vector import VectorHit, vector_search
 from app.services.personalization import PersonalizationService
+from app.services.shadow_traffic import ShadowControlError, ShadowTrafficService
 
 if TYPE_CHECKING:
     from app.services.ab_testing import ABTestingService
@@ -153,6 +154,7 @@ class SearchOrchestrator:
         personalization_service: PersonalizationService | None = None,
         ab_testing_service: "ABTestingService | None" = None,
         mmr_config: "MMRConfig | None" = None,
+        shadow_traffic_service: "ShadowTrafficService | None" = None,
     ) -> None:
         self._session = session
         self._qdrant = qdrant_client
@@ -168,6 +170,7 @@ class SearchOrchestrator:
         self._personalization = personalization_service
         self._ab_testing = ab_testing_service
         self._mmr_config = mmr_config or MMRConfig()
+        self._shadow = shadow_traffic_service
 
     @span(tracer, "search.request", attributes={
         "query_lang": "unknown",  # TODO: detect with langdetect if needed
@@ -181,11 +184,15 @@ class SearchOrchestrator:
         "degraded": False,  # Set later
         "latency_ms": 0,  # Set later
     })
-    async def search(self, req: SearchRequest) -> SearchResponse:
+    async def search(self, req: SearchRequest, *, _internal: bool = False) -> SearchResponse:
         """Execute the full search pipeline: channels → fusion → rerank.
 
         Runs both channels in parallel, fuses, optionally reranks with the
         cross-encoder, and returns a ``SearchResponse``.
+        
+        Args:
+            req: Search request
+            _internal: If True, skip shadow traffic and A/B testing (internal calls)
         """
         start = time.monotonic()
         deadline = start + req.timeout_ms / 1000.0
@@ -514,6 +521,15 @@ class SearchOrchestrator:
             variant=variant,
         )
 
+        # Shadow traffic integration (PR-08)
+        # Only run for external requests (not internal shadow calls)
+        shadow_experiment_id = None
+        if not _internal and self._shadow is not None and self._flags.shadow_traffic_enabled:
+            shadow_experiment_id = self._shadow.should_sample()
+            # Skip shadow if request already has an experiment_id (avoid attribution conflict)
+            if shadow_experiment_id and req.experiment_id is not None:
+                shadow_experiment_id = None
+        
         # Fire-and-forget logging of search events (uses fresh session to avoid race with request cleanup)
         async def log_search_event() -> None:
             try:
@@ -544,8 +560,13 @@ class SearchOrchestrator:
                 # Never let logging failures affect the response
                 logger.warning("Failed to log search event", extra={"error": str(e)})
 
-        # Start background logging task
-        asyncio.create_task(log_search_event())
+        # Start background logging or shadow task
+        if shadow_experiment_id:
+            # Shadow traffic: suppress main logging, start shadow background task
+            asyncio.create_task(self._shadow_background(req, response, shadow_experiment_id))
+        else:
+            # Normal logging: fire-and-forget search event
+            asyncio.create_task(log_search_event())
 
         return response
 
@@ -1103,3 +1124,96 @@ class SearchOrchestrator:
                 extra={"error": str(outcome.lex_error)},
             )
         return degraded
+    
+    def fork(self, session: AsyncSession) -> "SearchOrchestrator":
+        """Create a new SearchOrchestrator with the same components but fresh session.
+        
+        Required for concurrent shadow traffic execution (asyncpg sessions are not concurrency-safe).
+        """
+        from app.config import get_settings
+        
+        settings = get_settings()
+        return SearchOrchestrator(
+            session=session,
+            qdrant_client=self._qdrant,
+            embedding_service=self._emb_svc,
+            embedding_cache=self._emb_cache,
+            config=self._config,
+            reranker=self._reranker,
+            circuit_breaker=self._breaker,
+            speculative_reranker=self._speculative,
+            reranker_config=self._reranker_config,
+            feature_flags=self._flags,
+            qdrant_health_check=self._qdrant_health_check,
+            personalization_service=self._personalization,
+            ab_testing_service=self._ab_testing,
+            mmr_config=self._mmr_config,
+            shadow_traffic_service=self._shadow,
+        )
+    
+    async def _shadow_background(
+        self, 
+        req: SearchRequest, 
+        response: SearchResponse, 
+        experiment_id: str
+    ) -> None:
+        """Background task for shadow traffic execution and logging.
+        
+        Args:
+            req: Original search request
+            response: Main search response (control result fallback)
+            experiment_id: Shadow experiment ID
+        """
+        if self._shadow is None:
+            return
+            
+        try:
+            # Execute shadow traffic with fresh orchestrator instances
+            shadow_result = await self._shadow.run_shadow(req, self)
+            
+            # Log shadow results
+            await self._shadow.log_shadow(
+                shadow_result=shadow_result,
+                user_id=str(req.user_id) if req.user_id else None,
+                tenant_id=str(req.tenant_id),
+                experiment_id=experiment_id,
+            )
+            
+        except Exception as e:
+            # Fallback: log the main response as control if shadow control failed
+            if isinstance(e, ShadowControlError):
+                logger.warning(
+                    "Shadow control search failed, falling back to main response",
+                    extra={"error": str(e)},
+                )
+                try:
+                    from app.db.queries.search_events import SearchEventQueries
+                    from app.config import get_settings
+                    
+                    settings = get_settings()
+                    queries = SearchEventQueries(settings.search_events)
+                    
+                    async with queries.get_session() as session:
+                        await queries.insert_search_event(
+                            session,
+                            user_id=str(req.user_id) if req.user_id else None,
+                            tenant_id=str(req.tenant_id),
+                            query_text=req.query,
+                            query_lang=None,  # Not available in SearchRequest
+                            top_doc_ids=response.hits,
+                            fusion_strategy=response.fusion_strategy,
+                            experiment_id=experiment_id,
+                            variant="control",
+                            latency_ms=response.latency_ms,
+                        )
+                except Exception as log_error:
+                    logger.error(
+                        "Failed to fallback shadow logging",
+                        extra={"error": str(log_error)},
+                    )
+            
+            # Record error metric for any shadow failure
+            metrics.shadow_traffic_errors_total.inc(
+                reason="shadow_background_failed",
+                experiment_id=experiment_id,
+            )

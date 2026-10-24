@@ -17,6 +17,7 @@ from app.api.deps import (
     get_circuit_breaker,
     get_personalization_service,
     get_reranker_service,
+    get_shadow_traffic_service,
     get_speculative_reranker,
 )
 from app.api.schemas import ClickRequest, SearchRequest, SearchResponse
@@ -42,6 +43,7 @@ CircuitBreakerDep = Annotated[RerankerCircuitBreaker, Depends(get_circuit_breake
 SpeculativeDep = Annotated[SpeculativeReranker, Depends(get_speculative_reranker)]
 PersonalizationDep = Annotated["PersonalizationService", Depends(get_personalization_service)]
 ABTestingDep = Annotated[ABTestingService, Depends(get_ab_testing_service)]
+ShadowTrafficDep = Annotated["ShadowTrafficService", Depends(get_shadow_traffic_service)]
 
 
 def _get_embedding_service() -> EmbeddingService:
@@ -65,6 +67,7 @@ async def search(
     speculative_reranker: SpeculativeDep,
     personalization_service: PersonalizationDep,
     ab_testing_service: ABTestingDep,
+    shadow_traffic_service: ShadowTrafficDep,
 ) -> SearchResponse:
     """Run hybrid search: lexical + vector channels, fusion, optional rerank."""
     qdrant_client = get_async_qdrant_client()
@@ -85,6 +88,7 @@ async def search(
         personalization_service=personalization_service,
         ab_testing_service=ab_testing_service,
         mmr_config=settings.mmr,
+        shadow_traffic_service=shadow_traffic_service,
     )
 
     try:

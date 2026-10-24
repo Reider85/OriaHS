@@ -78,7 +78,7 @@ class SearchEventQueries(BaseQueries):
                 )
                 VALUES (
                     :user_id, :tenant_id, :query_text, :query_lang, :top_doc_ids,
-                    :fusion_strategy, :experiment_id, :variant, :latency_ms, now()
+                    :fusion_strategy, :experiment_id, coalesce(:variant, 'control'), :latency_ms, now()
                 )
                 RETURNING id
                 """
@@ -146,7 +146,7 @@ class SearchEventQueries(BaseQueries):
                 )
                 VALUES (
                     :user_id, :tenant_id, :query_text, :clicked_doc_id, :position,
-                    :experiment_id, :variant, now()
+                    :experiment_id, coalesce(:variant, 'control'), now()
                 )
                 """
             ),

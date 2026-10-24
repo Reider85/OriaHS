@@ -116,6 +116,26 @@ class TestShadowTrafficConfig:
         assert config.enabled is False
         assert config.strategies == []
         assert config.log_variant is True
+        assert config.experiment_id is None
+        assert config.sample_rate == 1.0
+
+    def test_env_override(self):
+        """Test environment variable override."""
+        os.environ["SHADOW_EXPERIMENT_ID"] = "shadow-exp-123"
+        os.environ["SHADOW_SAMPLE_RATE"] = "0.1"
+        config = ShadowTrafficConfig()
+        assert config.experiment_id == "shadow-exp-123"
+        assert config.sample_rate == 0.1
+        del os.environ["SHADOW_EXPERIMENT_ID"]
+        del os.environ["SHADOW_SAMPLE_RATE"]
+
+    def test_sample_rate_bounds(self):
+        """Test sample_rate validation bounds."""
+        with pytest.raises(ValidationError):
+            ShadowTrafficConfig(sample_rate=-0.1)  # Below 0
+
+        with pytest.raises(ValidationError):
+            ShadowTrafficConfig(sample_rate=1.1)  # Above 1
 
 
 class TestChaosConfig:

@@ -420,6 +420,10 @@ __all__ = [
     # OpenTelemetry tracing metrics
     "otel_spans_exported_total",
     "otel_export_errors_total",
+    # Shadow traffic metrics (PR-08)
+    "shadow_traffic_total",
+    "shadow_traffic_errors_total", 
+    "shadow_traffic_latency_ms",
 ]
 
 
@@ -459,3 +463,23 @@ class CountingSpanExporter(SpanExporter):
     def shutdown(self) -> None:
         """Shutdown the wrapped exporter."""
         self.wrapped_exporter.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# Shadow traffic metrics (PR-08)
+# ---------------------------------------------------------------------------
+shadow_traffic_total = Counter(
+    "shadow_traffic_total",
+    "Total number of shadow traffic executions",
+    ["treatment_strategy", "experiment_id"],
+)
+shadow_traffic_errors_total = Counter(
+    "shadow_traffic_errors_total", 
+    "Total number of shadow traffic errors",
+    ["reason", "experiment_id"],
+)
+shadow_traffic_latency_ms = Histogram(
+    "shadow_traffic_latency_ms",
+    "Shadow traffic execution latency in milliseconds",
+    ["experiment_id"],
+)

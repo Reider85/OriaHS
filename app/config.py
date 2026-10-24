@@ -285,6 +285,8 @@ class ShadowTrafficConfig(BaseSettings):
     enabled: bool = False
     strategies: list[str] = []
     log_variant: bool = True
+    experiment_id: str | None = None
+    sample_rate: float = Field(1.0, ge=0.0, le=1.0)
 
 
 class ChaosConfig(BaseSettings):

@@ -9,6 +9,7 @@ from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
+from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.search.filters import SearchFilters
@@ -267,3 +268,37 @@ class ClickRequest(BaseModel):
     position: int | None = None  # 1-based position in results, optional
     experiment_id: str | None = None  # A/B test identifier, optional
     context: SearchContext | None = None  # for contextual personalization (PR-05)
+
+
+class ShadowExperimentCreate(BaseModel):
+    """Body of ``POST /experiments/shadow`` (PR-08).
+    
+    Creates a shadow traffic experiment for parallel strategy evaluation.
+    """
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    experiment_id: str  # unique experiment identifier
+    description: str | None = None  # optional description
+    control_strategy: str = "rrf"  # production strategy name
+    treatment_strategies: list[str]  # alternative strategies to evaluate
+
+
+@dataclass
+class VariantMetrics(BaseModel):
+    """Variant metrics for shadow comparison."""
+    
+    count: int
+    ctr: float  # click-through rate
+    mrr: float  # mean reciprocal rank
+    no_click_rate: float
+    latency_p95: float
+
+
+class ShadowComparisonResponse(BaseModel):
+    """Response for ``GET /experiments/shadow/{id}/comparison`` (PR-08)."""
+    
+    control: VariantMetrics
+    treatment: VariantMetrics
+    
+    model_config = ConfigDict(extra="forbid")

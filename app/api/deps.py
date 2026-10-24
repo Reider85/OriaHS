@@ -22,6 +22,7 @@ from app.search.speculative import SpeculativeReranker
 if TYPE_CHECKING:
     from app.services.ab_testing import ABTestingService
     from app.services.personalization import PersonalizationService
+    from app.services.shadow_traffic import ShadowTrafficService
 
 __all__ = [
     "get_ab_testing_service",
@@ -32,6 +33,7 @@ __all__ = [
     "get_settings",
     "get_speculative_reranker",
     "get_personalization_service",
+    "get_shadow_traffic_service",
 ]
 
 
@@ -89,3 +91,19 @@ def get_ab_testing_service(
     from app.services.ab_testing import ABTestingService
 
     return ABTestingService(session, get_settings().ab_testing)
+
+
+def get_shadow_traffic_service() -> "ShadowTrafficService":
+    """Factory for ShadowTrafficService (cached singleton).
+    
+    Shadow traffic service is cached since it holds configuration and doesn't
+    need per-request state.
+    """
+    from app.services.shadow_traffic import ShadowTrafficService
+    from app.config import get_settings
+    
+    settings = get_settings()
+    return ShadowTrafficService(
+        config=settings.shadow_traffic,
+        feature_flags=settings.feature_flags,
+    )
