@@ -132,12 +132,12 @@ async def get_adaptive_k(
         from app.db.queries import tenant_stats as tenant_stats_queries
 
         cache_key = _DOC_COUNT_CACHE_KEY.format(tenant_id=tenant_id)
-        doc_count: int | None = None
 
         cached = await redis_client.get(cache_key)
         if cached is not None:
-            doc_count = int(cached)
-            stats = _stats_from_doc_count(tenant_id, doc_count)
+            stats: TenantSearchStat | None = _stats_from_doc_count(
+                tenant_id, int(cached)
+            )
         else:
             stats = await tenant_stats_queries.get(session, tenant_id)
             if stats is not None:
