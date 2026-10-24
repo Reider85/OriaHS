@@ -341,6 +341,25 @@ mmr_lambda_param = Gauge(
 )
 
 # ---------------------------------------------------------------------------
+# Adaptive K metrics — filled by SearchOrchestrator (PR-10, ARCHITECT 6.4)
+# ---------------------------------------------------------------------------
+adaptive_k_used_total = Counter(
+    "adaptive_k_used_total",
+    "Total searches where adaptive K was applied, by tenant size bucket.",
+    labelnames=["bucket"],  # "small", "medium", "large"
+)
+
+adaptive_k_lexical = Gauge(
+    "adaptive_k_lexical",
+    "K_lexical used in the last adaptive-K search.",
+)
+
+adaptive_k_vector = Gauge(
+    "adaptive_k_vector",
+    "K_vector used in the last adaptive-K search.",
+)
+
+# ---------------------------------------------------------------------------
 # Migration framework metrics — filled by MigrationService (PR-07)
 # ---------------------------------------------------------------------------
 migration_backfill_progress = Gauge(
@@ -411,6 +430,10 @@ __all__ = [
     "mmr_diversify_total",
     "mmr_diversity_score",
     "mmr_lambda_param",
+    # Adaptive K metrics (PR-10)
+    "adaptive_k_used_total",
+    "adaptive_k_lexical",
+    "adaptive_k_vector",
     # Migration framework metrics (PR-07)
     "migration_backfill_progress",
     "migration_backfill_speed",

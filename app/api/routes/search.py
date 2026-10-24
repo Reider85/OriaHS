@@ -89,6 +89,7 @@ async def search(
         ab_testing_service=ab_testing_service,
         mmr_config=settings.mmr,
         shadow_traffic_service=shadow_traffic_service,
+        adaptive_k_config=settings.adaptive_k,
     )
 
     try:

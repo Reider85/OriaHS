@@ -292,16 +292,24 @@ class SearchOrchestrator:
 
         # Adaptive K per tenant (ARCHITECT 6.4, PR-10). Computed before the
         # channels start so both channels and push-down use the same K.
+        # Budget guard: a dead Redis must not consume the search deadline —
+        # on timeout we silently fall back to the static K.
         adaptive_k: AdaptiveKResult | None = None
         if self._flags.adaptive_k_enabled:
-            adaptive_k = await get_adaptive_k(
-                self._session,
-                get_redis_client(),
-                req.tenant_id,
-                req.query,
-                self._adaptive_k_config,
-                self._config,
-            )
+            try:
+                adaptive_k = await asyncio.wait_for(
+                    get_adaptive_k(
+                        self._session,
+                        get_redis_client(),
+                        req.tenant_id,
+                        req.query,
+                        self._adaptive_k_config,
+                        self._config,
+                    ),
+                    timeout=self._adaptive_k_config.load_timeout_ms / 1000.0,
+                )
+            except TimeoutError:
+                adaptive_k = None
             if adaptive_k is not None:
                 metrics.adaptive_k_used_total.labels(bucket=adaptive_k.bucket).inc()
                 metrics.adaptive_k_lexical.set(adaptive_k.k_lexical)

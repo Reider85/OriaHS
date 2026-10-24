@@ -179,6 +179,7 @@ class SearchResponse(BaseModel):
     partial: bool = False
     variant: str | None = None  # shadow traffic variant identifier (PR-08)
     personalization: PersonalizationDebug | None = None  # PR-01 personalization debug
+    fusion_strategy: str | None = None  # fusion strategy used
 
 
 # ---------------------------------------------------------------------------

@@ -312,6 +312,7 @@ class AdaptiveKConfig(BaseSettings):
     long_query_len_threshold: int = 20
     k_small: int = 30
     k_large: int = 100
+    load_timeout_ms: int = 100
 
 
 class IncrementalFacetsConfig(BaseSettings):
