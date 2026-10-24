@@ -184,20 +184,20 @@ class SearchOrchestrator:
         self._mmr_config = mmr_config or MMRConfig()
         self._adaptive_k_config = adaptive_k_config or AdaptiveKConfig()
         self._shadow = shadow_traffic_service
-        
+
         # Initialize shadow traffic service with orchestrator reference
         if self._shadow:
             self._shadow.orchestrator = self
 
     @span(tracer, "search.request", attributes={
         "query_lang": "unknown",  # TODO: detect with langdetect if needed
-        "fusion": lambda: req.fusion,
-        "experiment_id": lambda: req.experiment_id,
-        "user_id_hashed": lambda: str(req.user_id) if req.user_id else None,
-        "tenant_id": lambda: str(req.tenant_id),
-        "rerank": lambda: req.rerank,
-        "personalize": lambda: req.personalize,
-        "diversify": lambda: req.diversify,
+        "fusion": lambda req=req: req.fusion,
+        "experiment_id": lambda req=req: req.experiment_id,
+        "user_id_hashed": lambda req=req: str(req.user_id) if req.user_id else None,
+        "tenant_id": lambda req=req: str(req.tenant_id),
+        "rerank": lambda req=req: req.rerank,
+        "personalize": lambda req=req: req.personalize,
+        "diversify": lambda req=req: req.diversify,
         "degraded": False,  # Set later
         "latency_ms": 0,  # Set later
     })
@@ -206,7 +206,7 @@ class SearchOrchestrator:
 
         Runs both channels in parallel, fuses, optionally reranks with the
         cross-encoder, and returns a ``SearchResponse``.
-        
+
         Args:
             req: Search request
             _internal: If True, skip shadow traffic and A/B testing (internal calls)
@@ -595,7 +595,7 @@ class SearchOrchestrator:
             # Skip shadow if request already has an experiment_id (avoid attribution conflict)
             if shadow_experiment_id and req.experiment_id is not None:
                 shadow_experiment_id = None
-        
+
         # Fire-and-forget logging of search events (uses fresh session to avoid race with request cleanup)
         async def log_search_event() -> None:
             try:
@@ -650,7 +650,7 @@ class SearchOrchestrator:
     # ------------------------------------------------------------------
 
     @span(tracer, "pg.lexical", attributes={
-        "query_len": lambda: len(req.query),
+        "query_len": lambda req=req: len(req.query),
     })
     async def _lexical_channel(self, req: SearchRequest, *, k: int) -> list[LexicalHit]:
         # The decorator lambdas are evaluated at span creation, before the
@@ -667,8 +667,8 @@ class SearchOrchestrator:
         )
 
     @span(tracer, "qdrant.vector", attributes={
-        "pushdown": lambda: self._flags.pushdown_enabled,
-        "pushdown_count": lambda: len(pushdown_ids) if pushdown_ids else 0,
+        "pushdown": lambda self=self: self._flags.pushdown_enabled,
+        "pushdown_count": lambda pushdown_ids=pushdown_ids: len(pushdown_ids) if pushdown_ids else 0,
     })
     async def _vector_channel(
         self, req: SearchRequest, *, k: int, k_lexical: int
@@ -759,7 +759,7 @@ class SearchOrchestrator:
         rerank_requested = req.rerank and self._flags.rerank_enabled and self._reranker is not None
 
         if not rerank_requested:
-            outcome = await self._collect_channels(lex_task, vec_task, deadline)
+            outcome = await self._collect_channels(lex_task, vec_task, deadline, req.tenant_id)
             if req.rerank:
                 # Caller asked for rerank but it is unavailable (no GPU, flag
                 # off, or no service injected) — serve fusion-only.
@@ -775,7 +775,7 @@ class SearchOrchestrator:
 
         if self._breaker is not None and self._breaker.is_open():
             # Early return: RerankerService must not be called at all.
-            outcome = await self._collect_channels(lex_task, vec_task, deadline)
+            outcome = await self._collect_channels(lex_task, vec_task, deadline, req.tenant_id)
             outcome.rerank_degraded = True
             logger.warning(
                 "Circuit breaker open, skipping rerank", extra={"state": self._breaker.state()}
@@ -789,7 +789,7 @@ class SearchOrchestrator:
         ):
             return await self._run_speculative(req, lex_task, vec_task, deadline)
 
-        outcome = await self._collect_channels(lex_task, vec_task, deadline)
+        outcome = await self._collect_channels(lex_task, vec_task, deadline, req.tenant_id)
         if not outcome.lex_done and not outcome.vec_done:
             return outcome
 
@@ -801,6 +801,7 @@ class SearchOrchestrator:
         lex_task: asyncio.Task[list[LexicalHit]],
         vec_task: asyncio.Task[list[VectorHit]] | None,
         deadline: float,
+        tenant_id: uuid.UUID,  # type: ignore
     ) -> _ChannelOutcome:
         """Await both channels under the overall deadline, cancelling stragglers.
 
@@ -827,7 +828,7 @@ class SearchOrchestrator:
             logger.warning(
                 "Search deadline exceeded, cancelling stragglers", extra={"pending": len(pending)}
             )
-            metrics.search_partial_total.inc()
+            metrics.search_partial_total.labels(tenant_id=str(tenant_id)).inc()
 
         for task in pending:
             task.cancel()
@@ -903,7 +904,7 @@ class SearchOrchestrator:
             logger.warning("Speculative rerank exceeded deadline, falling back to fusion")
             for task in (lex_task, vec_task):
                 task.cancel()
-            collected = await self._collect_channels(lex_task, vec_task, deadline)
+            collected = await self._collect_channels(lex_task, vec_task, deadline, req.tenant_id)
             collected.partial = True
             if collected.lex_done or collected.vec_done:
                 collected.rerank_scores = await self._plain_rerank(req, collected)
@@ -926,7 +927,7 @@ class SearchOrchestrator:
         # raised before gathering, fall back to collecting them normally
         # rather than reading a result off a still-pending task.
         if not (lex_task.done() and vec_task.done()):
-            collected = await self._collect_channels(lex_task, vec_task, deadline)
+            collected = await self._collect_channels(lex_task, vec_task, deadline, req.tenant_id)
             collected.rerank_degraded = outcome.rerank_degraded
             return collected
 
@@ -1044,9 +1045,9 @@ class SearchOrchestrator:
     # ------------------------------------------------------------------
 
     @span(tracer, "fusion", attributes={
-        "strategy": lambda: req.fusion,
-        "alpha": lambda: req.fusion_alpha if req.fusion == "weighted" else None,
-        "rrf_k": lambda: self._config.rrf_k,
+        "strategy": lambda req=req: req.fusion,
+        "alpha": lambda req=req: req.fusion_alpha if req.fusion == "weighted" else None,
+        "rrf_k": lambda self=self: self._config.rrf_k,
     })
     def _fuse(
         self,
@@ -1225,15 +1226,15 @@ class SearchOrchestrator:
                 extra={"error": str(outcome.lex_error)},
             )
         return degraded
-    
+
     def fork(self, session: AsyncSession) -> "SearchOrchestrator":
         """Create a new SearchOrchestrator with the same components but fresh session.
-        
+
         Required for concurrent shadow traffic execution (asyncpg sessions are not concurrency-safe).
         """
         from app.config import get_settings
         
-        settings = get_settings()
+        get_settings()  # type: ignore
         return SearchOrchestrator(
             session=session,
             qdrant_client=self._qdrant,
@@ -1252,15 +1253,15 @@ class SearchOrchestrator:
             shadow_traffic_service=self._shadow,
             adaptive_k_config=self._adaptive_k_config,
         )
-    
+
     async def _shadow_background(
-        self, 
-        req: SearchRequest, 
-        response: SearchResponse, 
+        self,
+        req: SearchRequest,
+        response: SearchResponse,
         experiment_id: str
     ) -> None:
         """Background task for shadow traffic execution and logging.
-        
+
         Args:
             req: Original search request
             response: Main search response (control result fallback)
@@ -1268,11 +1269,11 @@ class SearchOrchestrator:
         """
         if self._shadow is None:
             return
-            
+
         try:
             # Execute shadow traffic with fresh orchestrator instances
             shadow_result = await self._shadow.run_shadow(req, self)
-            
+
             # Log shadow results
             await self._shadow.log_shadow(
                 shadow_result=shadow_result,
@@ -1280,7 +1281,7 @@ class SearchOrchestrator:
                 tenant_id=str(req.tenant_id),
                 experiment_id=experiment_id,
             )
-            
+
         except Exception as e:
             # Fallback: log the main response as control if shadow control failed
             if isinstance(e, ShadowControlError):
@@ -1289,12 +1290,12 @@ class SearchOrchestrator:
                     extra={"error": str(e)},
                 )
                 try:
-                    from app.db.queries.search_events import SearchEventQueries
                     from app.config import get_settings
-                    
+                    from app.db.queries.search_events import SearchEventQueries
+
                     settings = get_settings()
                     queries = SearchEventQueries(settings.search_events)
-                    
+
                     async with queries.get_session() as session:
                         await queries.insert_search_event(
                             session,
@@ -1313,7 +1314,7 @@ class SearchOrchestrator:
                         "Failed to fallback shadow logging",
                         extra={"error": str(log_error)},
                     )
-            
+
             # Record error metric for any shadow failure
             metrics.shadow_traffic_errors_total.labels(
                 reason="shadow_background_failed",

@@ -19,7 +19,6 @@ from testcontainers.postgres import PostgresContainer
 from app.api.schemas import ShadowExperimentCreate
 from app.config import AppConfig, ShadowTrafficConfig
 from app.db.session import async_session_factory
-from app.models import SearchRequest, SearchResponse
 from app.services.shadow_traffic import ShadowTrafficService
 from app.services.ab_testing import ABTestingService
 

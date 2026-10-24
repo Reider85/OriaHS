@@ -18,12 +18,14 @@ from app.embedding.service import EmbeddingService
 from app.search.exceptions import QdrantTimeoutError, QdrantUnavailableError
 from app.search.filters import SearchFilters
 from app.search.vector import (
-    DEFAULT_MODEL_NAME,
     SNIPPET_LENGTH,
     VectorHit,
     build_qdrant_filter,
     vector_search,
 )
+
+# Default model name (matches EmbeddingConfig.model_name default)
+DEFAULT_MODEL_NAME = "bge-m3-v1"
 
 
 def _scored_point(doc_id: str, score: float, tenant_id: str) -> qmodels.ScoredPoint:
