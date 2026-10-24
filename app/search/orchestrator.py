@@ -189,18 +189,7 @@ class SearchOrchestrator:
         if self._shadow:
             self._shadow.orchestrator = self
 
-    @span(tracer, "search.request", attributes={
-        "query_lang": "unknown",  # TODO: detect with langdetect if needed
-        "fusion": lambda req=req: req.fusion,
-        "experiment_id": lambda req=req: req.experiment_id,
-        "user_id_hashed": lambda req=req: str(req.user_id) if req.user_id else None,
-        "tenant_id": lambda req=req: str(req.tenant_id),
-        "rerank": lambda req=req: req.rerank,
-        "personalize": lambda req=req: req.personalize,
-        "diversify": lambda req=req: req.diversify,
-        "degraded": False,  # Set later
-        "latency_ms": 0,  # Set later
-    })
+    @span(tracer, "search.request")
     async def search(self, req: SearchRequest, *, _internal: bool = False) -> SearchResponse:
         """Execute the full search pipeline: channels → fusion → rerank.
 
@@ -649,9 +638,7 @@ class SearchOrchestrator:
     # Channels
     # ------------------------------------------------------------------
 
-    @span(tracer, "pg.lexical", attributes={
-        "query_len": lambda req=req: len(req.query),
-    })
+    @span(tracer, "pg.lexical")
     async def _lexical_channel(self, req: SearchRequest, *, k: int) -> list[LexicalHit]:
         # The decorator lambdas are evaluated at span creation, before the
         # adaptive K is known — set the effective K explicitly (PR-10).
@@ -666,10 +653,7 @@ class SearchOrchestrator:
             k=k,
         )
 
-    @span(tracer, "qdrant.vector", attributes={
-        "pushdown": lambda self=self: self._flags.pushdown_enabled,
-        "pushdown_count": lambda pushdown_ids=pushdown_ids: len(pushdown_ids) if pushdown_ids else 0,
-    })
+    @span(tracer, "qdrant.vector")
     async def _vector_channel(
         self, req: SearchRequest, *, k: int, k_lexical: int
     ) -> list[VectorHit]:
@@ -801,7 +785,7 @@ class SearchOrchestrator:
         lex_task: asyncio.Task[list[LexicalHit]],
         vec_task: asyncio.Task[list[VectorHit]] | None,
         deadline: float,
-        tenant_id: uuid.UUID,  # type: ignore
+        tenant_id: UUID,  # type: ignore
     ) -> _ChannelOutcome:
         """Await both channels under the overall deadline, cancelling stragglers.
 
@@ -1044,11 +1028,7 @@ class SearchOrchestrator:
     # Fusion and response assembly
     # ------------------------------------------------------------------
 
-    @span(tracer, "fusion", attributes={
-        "strategy": lambda req=req: req.fusion,
-        "alpha": lambda req=req: req.fusion_alpha if req.fusion == "weighted" else None,
-        "rrf_k": lambda self=self: self._config.rrf_k,
-    })
+    @span(tracer, "fusion")
     def _fuse(
         self,
         req: SearchRequest,
@@ -1233,7 +1213,7 @@ class SearchOrchestrator:
         Required for concurrent shadow traffic execution (asyncpg sessions are not concurrency-safe).
         """
         from app.config import get_settings
-        
+
         get_settings()  # type: ignore
         return SearchOrchestrator(
             session=session,

@@ -366,6 +366,7 @@ class FeatureFlags(BaseSettings):
     rerank_enabled: bool = True
     weighted_fusion_enabled: bool = True
     pushdown_enabled: bool = True
+    adaptive_k_enabled: bool = True
     throttle_enabled: bool = True
 
     # Production-Ready phase flags
