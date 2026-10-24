@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 
 from app.db.models.embedding_model import EmbeddingModel
 from app.db.queries.model_migrations import update_backfill_progress
-from app.db.session import Session
+from app.db.session import AsyncSession
 from app.embedding.service import EmbeddingConfig, EmbeddingService
 from app.observability.metrics import migration_backfill_progress
 
@@ -28,7 +28,7 @@ class BackfillWorker:
 
     def __init__(
         self,
-        session: Session,
+        session: AsyncSession,
         migration_id: str,
         embedding_service: EmbeddingService,
         batch_size: int = 50,
@@ -193,7 +193,7 @@ class BackfillWorker:
 
 
 async def create_backfill_worker(
-    session: Session,
+    session: AsyncSession,
     migration_id: str,
     embedding_config: EmbeddingConfig,
     batch_size: int = 50,

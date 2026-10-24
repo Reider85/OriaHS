@@ -19,9 +19,11 @@ from pydantic import BaseModel
 from sqlalchemy import Float, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models.document import Document
 from app.search.exceptions import DeadlockError
 from app.search.filters import SearchFilters
+from app.search.langid_fasttext import detect_token_languages, normalize_query, translit_variants
 
 SNIPPET_LENGTH = 200
 STATEMENT_TIMEOUT_MS = 100
@@ -29,6 +31,55 @@ STATEMENT_TIMEOUT_MS = 100
 TS_RANK_WEIGHT = 0.7
 TRIGRAM_WEIGHT = 0.3
 TRIGRAM_MATCH_THRESHOLD = 0.3
+
+
+def _build_mixed_tsquery(latin_tokens: list[str], cyrillic_tokens: list[str]) -> text:
+    """Build tsquery for mixed language search with transliteration.
+
+    Args:
+        latin_tokens: List of tokens with Latin script
+        cyrillic_tokens: List of tokens with Cyrillic script
+
+    Returns:
+        SQL text fragment with tsquery
+    """
+    # Build subqueries for each script - use spaces for single script, AND for mixed
+    latin_subquery = " ".join(latin_tokens) if latin_tokens else ""
+    cyrillic_subquery = " ".join(cyrillic_tokens) if cyrillic_tokens else ""
+
+    # Build main query with transliteration variants
+    main_queries = []
+
+    # Original query
+    if latin_subquery and cyrillic_subquery:
+        main_queries.append(f"({latin_subquery}) & ({cyrillic_subquery})")
+    elif latin_subquery:
+        main_queries.append(latin_subquery)
+    elif cyrillic_subquery:
+        main_queries.append(cyrillic_subquery)
+
+    # Transliterated variants (only for mixed scripts)
+    if latin_tokens and cyrillic_tokens:
+        translit_latin = " & ".join(translit_variants(" ".join(latin_tokens)))
+        if translit_latin != latin_subquery:
+            main_queries.append(f"({translit_latin}) & ({cyrillic_subquery})")
+
+        translit_cyrillic = " & ".join(translit_variants(" ".join(cyrillic_tokens)))
+        if translit_cyrillic != cyrillic_subquery:
+            main_queries.append(f"({latin_subquery}) & ({translit_cyrillic})")
+
+    if not main_queries:
+        return text("''")
+
+    # Combine with OR for transliteration variants
+    tsquery = " | ".join(main_queries)
+    return text(f"to_tsquery('simple', '{tsquery}')")
+
+
+def _is_mixed_query(query: str) -> bool:
+    """Check if query contains both Latin and Cyrillic scripts."""
+    tokens = detect_token_languages(query)
+    return bool(tokens["latin"] and tokens["cyrillic"])
 
 
 class LexicalHit(BaseModel):
@@ -64,9 +115,31 @@ async def lexical_search(
 
     for attempt in range(max_retries + 1):
         try:
-            tsq = func.plainto_tsquery("simple", query)
+            # Normalize query and check for mixed language
+            normalized_query = normalize_query(query)
+            mixed_language = settings.feature_flags.mixed_language_enabled and _is_mixed_query(normalized_query)
+
+            if mixed_language:
+                # Build mixed tsquery with transliteration
+                tokens = detect_token_languages(normalized_query)
+                tsq = _build_mixed_tsquery(tokens["latin"], tokens["cyrillic"])
+
+                # Log mixed query detection and transliteration usage
+                from app.observability import metrics
+                metrics.mixed_queries_detected_total.inc()
+
+                # Check if transliteration was actually used
+                if any([
+                    translit_variants(" ".join(tokens["latin"])) != [" ".join(tokens["latin"])],
+                    translit_variants(" ".join(tokens["cyrillic"])) != [" ".join(tokens["cyrillic"])],
+                ]):
+                    metrics.transliteration_used_total.inc()
+            else:
+                # Use standard tsquery
+                tsq = func.plainto_tsquery("simple", normalized_query)
+
+            trigram = func.similarity(Document.title + " " + Document.content, normalized_query)
             ts_rank = func.ts_rank(Document.tsv, tsq)
-            trigram = func.similarity(Document.title + " " + Document.content, query)
             score = (ts_rank * TS_RANK_WEIGHT + trigram * TRIGRAM_WEIGHT).label("score")
 
             conditions = [
@@ -133,8 +206,11 @@ async def lexical_search(
                 delay = base_delay_ms * (2**attempt) / 1000.0  # Exponential backoff
                 await asyncio.sleep(delay)
                 continue
-            raise last_error
+            raise last_error from None
 
         except Exception as exc:
             # Re-raise non-deadlock errors immediately
             raise exc
+
+    # This should never be reached, but add a return for type safety
+    return []

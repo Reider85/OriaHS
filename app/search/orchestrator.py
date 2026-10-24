@@ -79,6 +79,7 @@ from app.search.exceptions import (
 )
 from app.search.facets import compute_facets
 from app.search.fusion import rrf_fuse, weighted_fuse
+from app.search.langid_fasttext import get_langid
 from app.search.lexical import LexicalHit, lexical_search
 from app.search.pushdown import maybe_pushdown
 from app.search.speculative import SpeculativeReranker
@@ -596,12 +597,21 @@ class SearchOrchestrator:
                     # Extract top-K doc_ids from hits for logging
                     top_doc_ids = [hit.doc_id for hit in hits[: req.top_k]]
 
+                    # Detect query language
+                    query_lang = None
+                    try:
+                        lang, _ = await get_langid().detect(req.query)
+                        query_lang = lang
+                    except Exception:
+                        # Language detection failed, use None
+                        pass
+
                     await search_event_queries.insert_search_event(
                         session=bg_session,
                         user_id=str(req.user_id) if req.user_id else None,
                         tenant_id=str(req.tenant_id),
                         query_text=req.query,
-                        query_lang=None,  # Not available in SearchRequest
+                        query_lang=query_lang,
                         top_doc_ids=[str(doc_id) for doc_id in top_doc_ids],
                         fusion_strategy=req.fusion,
                         experiment_id=req.experiment_id,
@@ -1277,12 +1287,21 @@ class SearchOrchestrator:
                     queries = SearchEventQueries(settings.search_events)
 
                     async with queries.get_session() as session:
+                        # Detect query language
+                        query_lang = None
+                        try:
+                            lang, _ = await get_langid().detect(req.query)
+                            query_lang = lang
+                        except Exception:
+                            # Language detection failed, use None
+                            pass
+
                         await queries.insert_search_event(
                             session,
                             user_id=str(req.user_id) if req.user_id else None,
                             tenant_id=str(req.tenant_id),
                             query_text=req.query,
-                            query_lang=None,  # Not available in SearchRequest
+                            query_lang=query_lang,
                             top_doc_ids=response.hits,
                             fusion_strategy=response.fusion_strategy,
                             experiment_id=experiment_id,

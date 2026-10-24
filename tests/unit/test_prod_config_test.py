@@ -16,6 +16,7 @@ from app.config import (
     ChaosConfig,
     FeatureFlags,
     IncrementalFacetsConfig,
+    LangIdConfig,
     MigrationConfig,
     MMRConfig,
     NegativeCacheConfig,
@@ -262,6 +263,41 @@ class TestAppConfigIntegration:
         assert config1 is config2
 
 
+class TestFeatureFlags:
+    """Test FeatureFlags default values and env override."""
+
+    def test_default_values(self):
+        """Test default values match PROD-PROMPTS.md."""
+        config = FeatureFlags()
+
+        # Critical phase flags
+        assert config.vector_search_enabled is True
+        assert config.rerank_enabled is True
+        assert config.weighted_fusion_enabled is True
+        assert config.pushdown_enabled is True
+        assert config.adaptive_k_enabled is True
+        assert config.throttle_enabled is True
+
+        # Production-Ready phase flags
+        assert config.personalization_enabled is True
+        assert config.ab_testing_enabled is True
+        assert config.diversify_enabled is True
+        assert config.context_personalization_enabled is True
+        assert config.tracing_enabled is True
+        assert config.migration_framework_enabled is True
+        assert config.shadow_traffic_enabled is False
+        assert config.adaptive_k_enabled is True
+        assert config.incremental_facets_enabled is True
+        assert config.negative_cache_enabled is True
+        assert config.asymmetric_indexing_enabled is True
+        assert config.mixed_language_enabled is True  # PR-12
+
+    def test_mixed_language_flag(self):
+        """Test mixed language feature flag."""
+        config = FeatureFlags(mixed_language_enabled=False)
+        assert config.mixed_language_enabled is False
+
+
 class TestMMRConfig:
     """Test MMRConfig default values and env override."""
 
@@ -284,6 +320,42 @@ class TestMMRConfig:
 
         with pytest.raises(ValidationError):
             MMRConfig(min_lambda=-0.1)  # Below 0
+
+
+class TestLangIdConfig:
+    """Test LangIdConfig default values and env override."""
+
+    def test_default_values(self):
+        """Test default values match PROD-PROMPTS.md."""
+        config = LangIdConfig()
+
+        assert config.fasttext_confidence_threshold == 0.7
+        assert config.model_path is None
+        assert config.auto_download is True
+        assert config.fallback_language == "en"
+
+    def test_env_override(self):
+        """Test environment variable override."""
+        with pytest.raises(ValidationError):
+            LangIdConfig(fasttext_confidence_threshold=1.5)  # Outside bounds
+
+        with pytest.raises(ValidationError):
+            LangIdConfig(fasttext_confidence_threshold=-0.1)  # Below 0
+
+    def test_custom_model_path(self):
+        """Test custom model path configuration."""
+        config = LangIdConfig(model_path="/custom/path/model.ftz")
+        assert config.model_path == "/custom/path/model.ftz"
+
+    def test_custom_fallback_language(self):
+        """Test custom fallback language."""
+        config = LangIdConfig(fallback_language="ru")
+        assert config.fallback_language == "ru"
+
+    def test_disable_auto_download(self):
+        """Test disabling auto-download."""
+        config = LangIdConfig(auto_download=False)
+        assert config.auto_download is False
 
 
 def get_settings():

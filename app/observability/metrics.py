@@ -445,7 +445,7 @@ __all__ = [
     "otel_export_errors_total",
     # Shadow traffic metrics (PR-08)
     "shadow_traffic_total",
-    "shadow_traffic_errors_total", 
+    "shadow_traffic_errors_total",
     "shadow_traffic_latency_ms",
 ]
 
@@ -497,7 +497,7 @@ shadow_traffic_total = Counter(
     ["treatment_strategy", "experiment_id"],
 )
 shadow_traffic_errors_total = Counter(
-    "shadow_traffic_errors_total", 
+    "shadow_traffic_errors_total",
     "Total number of shadow traffic errors",
     ["reason", "experiment_id"],
 )
@@ -505,4 +505,24 @@ shadow_traffic_latency_ms = Histogram(
     "shadow_traffic_latency_ms",
     "Shadow traffic execution latency in milliseconds",
     ["experiment_id"],
+)
+
+# Language identification metrics (PR-12)
+langid_fasttext_used_total = Counter(
+    "langid_fasttext_used_total",
+    "Total number of FastText language detection calls",
+    ["language"],
+)
+langid_fallback_total = Counter(
+    "langid_fallback_total",
+    "Total number of fallback language detection calls",
+    ["reason"],
+)
+mixed_queries_detected_total = Counter(
+    "mixed_queries_detected_total",
+    "Total number of mixed language queries detected",
+)
+transliteration_used_total = Counter(
+    "transliteration_used_total",
+    "Total number of transliteration variants used",
 )

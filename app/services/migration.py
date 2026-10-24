@@ -32,7 +32,7 @@ from app.db.queries.model_migrations import (
     update_backfill_progress,
     update_canary_results,
 )
-from app.db.session import Session
+from app.db.session import AsyncSession
 from app.embedding.service import EmbeddingConfig, EmbeddingService
 from app.observability.metrics import (
     migration_canary_similarity,
@@ -52,7 +52,7 @@ class MigrationService:
 
     def __init__(
         self,
-        session: Session,
+        session: AsyncSession,
         qdrant_client: QdrantClient | None = None,
         embedding_old: EmbeddingService | None = None,
         embedding_new: EmbeddingService | None = None,
@@ -131,7 +131,7 @@ class MigrationService:
 
         # Create new Qdrant collection
         from qdrant_client.http import models as qdrant_models
-        
+
         collection_config = qdrant_models.CreateCollection(
             vectors=qdrant_models.VectorsConfig(
                 size=new_dimension,
@@ -139,7 +139,7 @@ class MigrationService:
             ),
             replication_factor=settings.qdrant.replication_factor,
         )
-        
+
         await self.qdrant_client._client.create_collection(new_collection, collection_config)
 
         # Create migration record
@@ -722,7 +722,7 @@ class MigrationService:
 
         # Ensure collection exists
         from qdrant_client.http import models as qdrant_models
-        
+
         try:
             await self.qdrant_client._client.get_collection(collection)
         except Exception:

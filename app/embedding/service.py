@@ -13,6 +13,7 @@ from sentence_transformers import SentenceTransformer
 from app.config import EmbeddingConfig
 from app.embedding.cache import EmbeddingCache
 from app.observability.tracing import get_tracer, span
+from app.utils.normalization import normalize_nfc
 
 logger = logging.getLogger(__name__)
 tracer = get_tracer("embedding.service")
@@ -124,13 +125,16 @@ class EmbeddingService:
     })
     async def embed_query(self, query: str) -> np.ndarray:
         """Encode a single query string (used by search channels)."""
+        # Apply NFC normalization before cache lookup for consistency
+        normalized_query = normalize_nfc(query)
+
         cached = None
         if self._cache is not None:
-            cached = await self._cache.get_query_embedding(query, self._config.model_name)
+            cached = await self._cache.get_query_embedding(normalized_query, self._config.model_name)
             if cached is not None:
                 return cached
-        result = await self.embed_texts([query])
+        result = await self.embed_texts([normalized_query])
         vector: np.ndarray = result[0]
         if self._cache is not None:
-            await self._cache.set_query_embedding(query, self._config.model_name, vector)
+            await self._cache.set_query_embedding(normalized_query, self._config.model_name, vector)
         return vector

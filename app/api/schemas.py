@@ -5,11 +5,11 @@ models here. Status values are frozen here so the fast-path no-op is
 observable to clients instead of being a silent 201.
 """
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.search.filters import SearchFilters
@@ -276,9 +276,9 @@ class ShadowExperimentCreate(BaseModel):
     
     Creates a shadow traffic experiment for parallel strategy evaluation.
     """
-    
+
     model_config = ConfigDict(extra="forbid")
-    
+
     experiment_id: str  # unique experiment identifier
     description: str | None = None  # optional description
     control_strategy: str = "rrf"  # production strategy name
@@ -288,7 +288,7 @@ class ShadowExperimentCreate(BaseModel):
 @dataclass
 class VariantMetrics(BaseModel):
     """Variant metrics for shadow comparison."""
-    
+
     count: int
     ctr: float  # click-through rate
     mrr: float  # mean reciprocal rank
@@ -298,8 +298,8 @@ class VariantMetrics(BaseModel):
 
 class ShadowComparisonResponse(BaseModel):
     """Response for ``GET /experiments/shadow/{id}/comparison`` (PR-08)."""
-    
+
     control: VariantMetrics
     treatment: VariantMetrics
-    
+
     model_config = ConfigDict(extra="forbid")

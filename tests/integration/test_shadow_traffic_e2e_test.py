@@ -7,8 +7,8 @@ and mocks for external services.
 
 import asyncio
 import uuid
-from datetime import date, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import date, timedelta
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -19,8 +19,6 @@ from testcontainers.postgres import PostgresContainer
 from app.api.schemas import ShadowExperimentCreate
 from app.config import AppConfig, ShadowTrafficConfig
 from app.db.session import async_session_factory
-from app.services.shadow_traffic import ShadowTrafficService
-from app.services.ab_testing import ABTestingService
 
 
 @pytest.fixture(scope="session")
@@ -47,13 +45,12 @@ async def engine_setup(engine: AsyncEngine):
     """Create database tables and test data."""
     # Import here to avoid issues with test discovery
     from app.db.base import Base
-    from app.db.models.search_event import SearchEvent
-    from app.db.models.user_context_profile import UserContextProfile
-    
+
+
     # Create all tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
 # Create test tenant
     async with async_session_factory() as session:
         from app.db.models.tenant import Tenant
@@ -63,16 +60,16 @@ async def engine_setup(engine: AsyncEngine):
 
     """Create test FastAPI app with overridden dependencies."""
     from app.main import create_app
-    
+
     app = create_app()
-    
+
     # Override database dependency
     async def override_get_session():
         async with async_session_factory() as session:
             yield session
-    
+
     app.dependency_overrides[async_session_factory] = override_get_session
-    
+
     # Override app config with test settings
     test_config = AppConfig()
     test_config.feature_flags.ab_testing_enabled = True
@@ -83,9 +80,9 @@ async def engine_setup(engine: AsyncEngine):
         strategies=["weighted+rerank"],
         sample_rate=1.0,
     )
-    
+
     app.dependency_overrides[lambda: test_config] = lambda: test_config
-    
+
     return app
 
 
@@ -122,18 +119,18 @@ class TestShadowTrafficE2E:
     async def test_shadow_experiment_creation(self, client: AsyncClient):
         """Test creation of shadow traffic experiment."""
         experiment_id = f"shadow-{uuid.uuid4().hex[:8]}"
-        
+
         payload = ShadowExperimentCreate(
             experiment_id=experiment_id,
             description="Test shadow experiment",
             control_strategy="rrf",
             treatment_strategies=["weighted+rerank", "rrf+personalize"],
         )
-        
+
         response = await client.post("/experiments/shadow", json=payload.model_dump())
         assert response.status_code == 201
         assert response.json() == {"experiment_id": experiment_id}
-        
+
         # Test duplicate creation
         duplicate_response = await client.post("/experiments/shadow", json=payload.model_dump())
         assert duplicate_response.status_code == 409
@@ -143,14 +140,14 @@ class TestShadowTrafficE2E:
         # Disable shadow flag
         from app.api.deps import get_app_config
         original_config = get_app_config()
-        
+
         def disabled_config():
             config = original_config()
             config.feature_flags.shadow_traffic_enabled = False
             return config
-        
+
         client.app.dependency_overrides[get_app_config] = disabled_config
-        
+
         experiment_id = f"shadow-{uuid.uuid4().hex[:8]}"
         payload = ShadowExperimentCreate(
             experiment_id=experiment_id,
@@ -158,10 +155,10 @@ class TestShadowTrafficE2E:
             control_strategy="rrf",
             treatment_strategies=["weighted+rerank"],
         )
-        
+
         response = await client.post("/experiments/shadow", json=payload.model_dump())
         assert response.status_code == 403
-        
+
         # Restore original config
         client.app.dependency_overrides.clear()
 
@@ -174,7 +171,7 @@ class TestShadowTrafficE2E:
             control_strategy="rrf",
             treatment_strategies=["invalid_strategy"],
         )
-        
+
         response = await client.post("/experiments/shadow", json=payload.model_dump())
         assert response.status_code == 422
         assert "Invalid strategy" in response.json()["detail"]
@@ -189,9 +186,9 @@ class TestShadowTrafficE2E:
             control_strategy="rrf",
             treatment_strategies=["weighted+rerank"],
         )
-        
+
         await client.post("/experiments/shadow", json=payload.model_dump())
-        
+
         # Execute search with shadow traffic
         search_request = {
             "query": "test search query",
@@ -199,18 +196,16 @@ class TestShadowTrafficE2E:
             "user_id": str(uuid.uuid4()),
             "top_k": 10,
         }
-        
+
         response = await client.post("/search", json=search_request)
         assert response.status_code == 200
-        
+
         # Verify shadow events were logged (poll for a short time)
-        from app.config import SearchEventsConfig
-        from app.db.queries.search_events import SearchEventQueries
-        
+
         # Wait up to 3 seconds for shadow events to be logged
         timeout = 3.0
         start_time = asyncio.get_event_loop().time()
-        
+
         while asyncio.get_event_loop().time() - start_time < timeout:
             async with async_session_factory() as session:
                 result = await session.execute(
@@ -218,12 +213,12 @@ class TestShadowTrafficE2E:
                     {"exp_id": experiment_id}
                 )
                 count = result.scalar()
-                
+
                 if count >= 2:  # Control + treatment
                     break
-                    
+
             await asyncio.sleep(0.1)
-        
+
         # Verify we have shadow events
         async with async_session_factory() as session:
             result = await session.execute(
@@ -231,7 +226,7 @@ class TestShadowTrafficE2E:
                 {"exp_id": experiment_id}
             )
             rows = result.fetchall()
-            
+
             # Should have control and treatment variants
             variants = {row[0] for row in rows}
             assert "control" in variants
@@ -245,17 +240,15 @@ class TestShadowTrafficE2E:
             "user_id": str(uuid.uuid4()),
             "top_k": 10,
         }
-        
+
         response = await client.post("/search", json=search_request)
         assert response.status_code == 200
-        
+
         # Verify only one search event was logged (no shadow)
-        from app.config import SearchEventsConfig
-        from app.db.queries.search_events import SearchEventQueries
-        
+
         # Wait briefly for event to be logged
         await asyncio.sleep(0.5)
-        
+
         async with async_session_factory() as session:
             result = await session.execute(
                 "SELECT COUNT(*) FROM search_events WHERE query = :query",
@@ -274,14 +267,12 @@ class TestShadowTrafficE2E:
             control_strategy="rrf",
             treatment_strategies=["weighted+rerank"],
         )
-        
+
         await client.post("/experiments/shadow", json=payload.model_dump())
-        
+
         # Insert some test search events
         async with async_session_factory() as session:
-            from app.config import SearchEventsConfig
-            from app.db.queries.search_events import SearchEventQueries
-            
+
             # Insert control events
             for _ in range(10):
                 await queries.insert_search_event(
@@ -296,7 +287,7 @@ class TestShadowTrafficE2E:
                     variant="control",
                     latency_ms=100,
                 )
-            
+
             # Insert treatment events
             for _ in range(8):
                 await queries.insert_search_event(
@@ -311,7 +302,7 @@ class TestShadowTrafficE2E:
                     variant="treatment",
                     latency_ms=120,
                 )
-            
+
             # Insert click events
             for _ in range(5):
                 await queries.insert_search_event(
@@ -324,7 +315,7 @@ class TestShadowTrafficE2E:
                     experiment_id=experiment_id,
                     variant="control",
                 )
-            
+
             for _ in range(3):
                 await queries.insert_search_event(
                     session,
@@ -336,36 +327,36 @@ class TestShadowTrafficE2E:
                     experiment_id=experiment_id,
                     variant="treatment",
                 )
-        
+
         # Get comparison metrics
         date_from = date.today() - timedelta(days=1)
         date_to = date.today()
-        
+
         response = await client.get(
             f"/experiments/shadow/{experiment_id}/comparison?date_from={date_from}&date_to={date_to}"
         )
         assert response.status_code == 200
-        
+
         data = response.json()
         assert "control" in data
         assert "treatment" in data
-        
+
         # Verify metrics structure
         control = data["control"]
         treatment = data["treatment"]
-        
+
         assert "count" in control
         assert "ctr" in control
         assert "mrr" in control
         assert "no_click_rate" in control
         assert "latency_p95" in control
-        
+
         assert "count" in treatment
         assert "ctr" in treatment
         assert "mrr" in treatment
         assert "no_click_rate" in treatment
         assert "latency_p95" in treatment
-        
+
         # Verify values make sense
         assert control["count"] == 10
         assert treatment["count"] == 8
@@ -377,7 +368,7 @@ class TestShadowTrafficE2E:
         experiment_id = "nonexistent-exp"
         date_from = date.today() - timedelta(days=1)
         date_to = date.today()
-        
+
         response = await client.get(
             f"/experiments/shadow/{experiment_id}/comparison?date_from={date_from}&date_to={date_to}"
         )
@@ -388,14 +379,14 @@ class TestShadowTrafficE2E:
         # Set low sample rate
         from app.api.deps import get_app_config
         original_config = get_app_config()
-        
+
         def low_sample_config():
             config = original_config()
             config.shadow_traffic.sample_rate = 0.1
             return config
-        
+
         client.app.dependency_overrides[get_app_config] = low_sample_config
-        
+
         # Create experiment
         experiment_id = f"shadow-{uuid.uuid4().hex[:8]}"
         payload = ShadowExperimentCreate(
@@ -404,13 +395,13 @@ class TestShadowTrafficE2E:
             control_strategy="rrf",
             treatment_strategies=["weighted+rerank"],
         )
-        
+
         await client.post("/experiments/shadow", json=payload.model_dump())
-        
+
         # Execute multiple searches
         search_count = 100
         shadow_count = 0
-        
+
         for i in range(search_count):
             search_request = {
                 "query": f"test query {i}",
@@ -418,10 +409,10 @@ class TestShadowTrafficE2E:
                 "user_id": str(uuid.uuid4()),
                 "top_k": 10,
             }
-            
+
             response = await client.post("/search", json=search_request)
             assert response.status_code == 200
-            
+
             # Check if shadow events were created
             async with async_session_factory() as session:
                 result = await session.execute(
@@ -430,16 +421,16 @@ class TestShadowTrafficE2E:
                 )
                 if result.scalar() > 0:
                     shadow_count += 1
-            
+
             await asyncio.sleep(0.01)  # Small delay between requests
-        
+
         # Restore original config
         client.app.dependency_overrides.clear()
-        
+
         # Statistical test: should be approximately 10% (±5% tolerance)
         expected_min = search_count * 0.05  # 5%
         expected_max = search_count * 0.15  # 15%
-        
+
         assert expected_min <= shadow_count <= expected_max, \
             f"Shadow count {shadow_count} outside expected range [{expected_min}, {expected_max}]"
 
@@ -448,14 +439,14 @@ class TestShadowTrafficE2E:
         # Disable shadow flag
         from app.api.deps import get_app_config
         original_config = get_app_config()
-        
+
         def disabled_config():
             config = original_config()
             config.feature_flags.shadow_traffic_enabled = False
             return config
-        
+
         client.app.dependency_overrides[get_app_config] = disabled_config
-        
+
         # Try to create shadow experiment (should fail)
         experiment_id = f"shadow-{uuid.uuid4().hex[:8]}"
         payload = ShadowExperimentCreate(
@@ -464,10 +455,10 @@ class TestShadowTrafficE2E:
             control_strategy="rrf",
             treatment_strategies=["weighted+rerank"],
         )
-        
+
         response = await client.post("/experiments/shadow", json=payload.model_dump())
         assert response.status_code == 403
-        
+
         # Execute normal search (should work without shadow)
         search_request = {
             "query": "test search query",
@@ -475,16 +466,16 @@ class TestShadowTrafficE2E:
             "user_id": str(uuid.uuid4()),
             "top_k": 10,
         }
-        
+
         response = await client.post("/search", json=search_request)
         assert response.status_code == 200
-        
+
         # Verify no shadow events
         async with async_session_factory() as session:
             result = await session.execute(
                 "SELECT COUNT(*) FROM search_events WHERE experiment_id IS NOT NULL"
             )
             assert result.scalar() == 0
-        
+
         # Restore original config
         client.app.dependency_overrides.clear()

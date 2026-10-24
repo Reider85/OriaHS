@@ -99,9 +99,9 @@ def get_shadow_traffic_service() -> "ShadowTrafficService":
     Shadow traffic service is cached since it holds configuration and doesn't
     need per-request state.
     """
-    from app.services.shadow_traffic import ShadowTrafficService
     from app.config import get_settings
-    
+    from app.services.shadow_traffic import ShadowTrafficService
+
     settings = get_settings()
     return ShadowTrafficService(
         config=settings.shadow_traffic,

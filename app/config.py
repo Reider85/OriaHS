@@ -335,6 +335,24 @@ class NegativeCacheConfig(BaseSettings):
     enabled: bool = True
 
 
+class LangIdConfig(BaseSettings):
+    """Language identification configuration (ARCHITECT §9.1, PR-12)."""
+
+    model_config = SettingsConfigDict(env_prefix="LANGID_", env_file=".env", extra="ignore")
+
+    fasttext_confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    """Confidence threshold below which fallback to tenant default language."""
+
+    model_path: str | None = None
+    """Path to FastText language model (lid.176.ftz). If None, auto-download to cache."""
+
+    auto_download: bool = True
+    """Enable auto-download of lid.176.ftz model to cache directory."""
+
+    fallback_language: str = "en"
+    """Fallback language when detection confidence is below threshold."""
+
+
 class MMRConfig(BaseSettings):
     """MMR diversification configuration (ARCHITECT §10.5, PR-04)."""
 
@@ -381,6 +399,7 @@ class FeatureFlags(BaseSettings):
     incremental_facets_enabled: bool = True
     negative_cache_enabled: bool = True
     asymmetric_indexing_enabled: bool = True
+    mixed_language_enabled: bool = True
 
 
 class AppConfig(BaseSettings):
@@ -412,6 +431,7 @@ class AppConfig(BaseSettings):
     throttle: Annotated[ThrottleConfig, Field(default_factory=ThrottleConfig)]
 
     # Production-Ready phase configs
+    langid: Annotated[LangIdConfig, Field(default_factory=LangIdConfig)]
     personalization: Annotated[PersonalizationConfig, Field(default_factory=PersonalizationConfig)]
     ab_testing: Annotated[ABTestingConfig, Field(default_factory=ABTestingConfig)]
     tracing: Annotated[TracingConfig, Field(default_factory=TracingConfig)]

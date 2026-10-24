@@ -12,7 +12,7 @@ from sqlalchemy import func, select, update
 
 from app.config import settings
 from app.db.models.model_migration import MigrationStatus, ModelMigration
-from app.db.session import Session
+from app.db.session import AsyncSession
 from app.observability.metrics import migration_backfill_progress, migration_backfill_speed
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def create_migration(
-    session: Session,
+    session: AsyncSession,
     old_model_name: str,
     new_model_name: str,
     old_collection: str,
@@ -42,12 +42,12 @@ def create_migration(
     return migration
 
 
-def get_migration(session: Session, migration_id: uuid.UUID) -> ModelMigration | None:
+def get_migration(session: AsyncSession, migration_id: uuid.UUID) -> ModelMigration | None:
     """Get a migration by ID."""
     return session.get(ModelMigration, migration_id)
 
 
-def get_latest_promoted(session: Session) -> ModelMigration | None:
+def get_latest_promoted(session: AsyncSession) -> ModelMigration | None:
     """Get the latest promoted migration for dual-write and search switching."""
     return session.scalars(
         select(ModelMigration)
@@ -57,7 +57,7 @@ def get_latest_promoted(session: Session) -> ModelMigration | None:
     ).first()
 
 
-def get_dual_write_targets(session: Session) -> list[tuple[str, str]] | None:
+def get_dual_write_targets(session: AsyncSession) -> list[tuple[str, str]] | None:
     """Get dual-write targets if a promoted migration exists.
     
     Returns list of (collection, model_name) tuples for dual-write.
@@ -78,7 +78,7 @@ _search_target_cache: dict[str, tuple[str, str]] = {}
 _search_target_cache_time: dict[str, datetime] = {}
 
 
-def get_active_search_target(session: Session, force_refresh: bool = False) -> tuple[str, str]:
+def get_active_search_target(session: AsyncSession, force_refresh: bool = False) -> tuple[str, str]:
     """Get active search target (collection, model_name).
     
     If a promoted migration exists, returns new collection and model.
@@ -123,7 +123,7 @@ def get_active_search_target(session: Session, force_refresh: bool = False) -> t
 
 
 def set_status(
-    session: Session,
+    session: AsyncSession,
     migration_id: uuid.UUID,
     status: MigrationStatus,
     **kwargs,
@@ -143,7 +143,7 @@ def set_status(
 
 
 def update_canary_results(
-    session: Session,
+    session: AsyncSession,
     migration_id: uuid.UUID,
     avg_similarity: float,
     min_similarity: float,
@@ -163,7 +163,7 @@ def update_canary_results(
 
 
 def update_backfill_progress(
-    session: Session,
+    session: AsyncSession,
     migration_id: uuid.UUID,
     processed: int,
     total: int,
@@ -196,12 +196,12 @@ def update_backfill_progress(
     session.commit()
 
 
-def mark_backfilled(session: Session, migration_id: uuid.UUID) -> None:
+def mark_backfilled(session: AsyncSession, migration_id: uuid.UUID) -> None:
     """Mark migration as backfilled."""
     set_status(session, migration_id, MigrationStatus.BACKFILLED)
 
 
-def mark_promoted(session: Session, migration_id: uuid.UUID) -> None:
+def mark_promoted(session: AsyncSession, migration_id: uuid.UUID) -> None:
     """Mark migration as promoted and set promoted_at timestamp."""
     set_status(
         session,
@@ -211,12 +211,12 @@ def mark_promoted(session: Session, migration_id: uuid.UUID) -> None:
     )
 
 
-def mark_rolled_back(session: Session, migration_id: uuid.UUID) -> None:
+def mark_rolled_back(session: AsyncSession, migration_id: uuid.UUID) -> None:
     """Mark migration as rolled back."""
     set_status(session, migration_id, MigrationStatus.ROLLED_BACK)
 
 
-def mark_cleaned(session: Session, migration_id: uuid.UUID) -> None:
+def mark_cleaned(session: AsyncSession, migration_id: uuid.UUID) -> None:
     """Mark migration as cleaned and set cleaned_at timestamp."""
     set_status(
         session,
@@ -226,7 +226,7 @@ def mark_cleaned(session: Session, migration_id: uuid.UUID) -> None:
     )
 
 
-def set_snapshot_s3_key(session: Session, migration_id: uuid.UUID, s3_key: str) -> None:
+def set_snapshot_s3_key(session: AsyncSession, migration_id: uuid.UUID, s3_key: str) -> None:
     """Set S3 snapshot key for the migration."""
     migration = get_migration(session, migration_id)
     if migration:
@@ -235,7 +235,7 @@ def set_snapshot_s3_key(session: Session, migration_id: uuid.UUID, s3_key: str) 
 
 
 def list_migrations(
-    session: Session,
+    session: AsyncSession,
     limit: int = 50,
     status: MigrationStatus | None = None
 ) -> list[ModelMigration]:
@@ -248,7 +248,7 @@ def list_migrations(
     return session.scalars(query.limit(limit)).all()
 
 
-def is_cleanup_allowed(session: Session, migration_id: uuid.UUID, force: bool = False) -> bool:
+def is_cleanup_allowed(session: AsyncSession, migration_id: uuid.UUID, force: bool = False) -> bool:
     """Check if cleanup is allowed for a migration.
     
     Cleanup is allowed if:

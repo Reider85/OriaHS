@@ -145,6 +145,8 @@ async def test_returns_vector_hits_with_titles() -> None:
         query="test query",
         tenant_id=tenant,
         filters=SearchFilters(),
+        collection_name="test_collection",
+        model_name="bge-m3",
         k=50,
     )
 
@@ -156,7 +158,7 @@ async def test_returns_vector_hits_with_titles() -> None:
     assert hit.title == "Matched"
     assert hit.content_snippet == "leading content..."
     assert 0 <= hit.score <= 1
-    service.embed_query.assert_not_awaited()
+    service.embed_query.assert_not_called()
     cache.set_query_embedding.assert_not_awaited()
 
 
@@ -182,6 +184,8 @@ async def test_results_sorted_by_score_desc_and_k_forwarded() -> None:
         query="q",
         tenant_id=tenant,
         filters=SearchFilters(),
+        collection_name="test_collection",
+        model_name="bge-m3",
         k=5,
     )
 
@@ -211,11 +215,13 @@ async def test_query_embedding_cache_miss_calls_embed_and_stores() -> None:
         query="unknown query",
         tenant_id=tenant,
         filters=SearchFilters(),
+        collection_name="test_collection",
+        model_name="bge-m3",
     )
 
     service.embed_query.assert_awaited_once_with("unknown query")
     cache.set_query_embedding.assert_awaited_once_with(
-        "unknown query", DEFAULT_MODEL_NAME, service.embed_query.return_value
+        "unknown query", "bge-m3", service.embed_query.return_value
     )
 
 
@@ -236,6 +242,8 @@ async def test_qdrant_timeout_raises_qdrant_timeout() -> None:
             query="q",
             tenant_id=tenant,
             filters=SearchFilters(),
+            collection_name="test_collection",
+            model_name="bge-m3",
         )
 
 
@@ -258,6 +266,8 @@ async def test_qdrant_api_exception_raises_unavailable() -> None:
             query="q",
             tenant_id=tenant,
             filters=SearchFilters(),
+            collection_name="test_collection",
+            model_name="bge-m3",
         )
 
 
@@ -277,6 +287,8 @@ async def test_empty_result_returns_empty_list() -> None:
         query="no match",
         tenant_id=tenant,
         filters=SearchFilters(),
+        collection_name="test_collection",
+        model_name="bge-m3",
     )
     assert hits == []
 

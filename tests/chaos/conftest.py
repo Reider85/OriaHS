@@ -9,27 +9,24 @@ Tests infrastructure resilience by simulating failures:
 Uses pytest markers and dependency injection for safe, isolated testing.
 """
 
-import asyncio
 import json
 import time
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Dict, Generator
+from typing import Any
 
 import pytest
 import redis.asyncio as redis
+from app.search.service import SearchService
 from fastapi import FastAPI
 from httpx import AsyncClient
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.trace import SpanKind
 from qdrant_client import QdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import ChaosConfig, get_settings
 from app.main import create_app
-from app.observability.metrics import setup_metrics
-from app.observability.tracing import setup_tracing
-from app.search.service import SearchService
 
 
 @pytest.fixture(scope="session")
@@ -90,7 +87,7 @@ def search_service(session: AsyncSession, chaos_config: ChaosConfig) -> SearchSe
 
 
 @pytest.fixture
-def mock_query() -> Dict[str, Any]:
+def mock_query() -> dict[str, Any]:
     """Standard test query."""
     return {
         "query": "test chaos engineering",
@@ -136,18 +133,18 @@ def mock_span_processor(metrics_report_dir: Path):
 
 @pytest.fixture(autouse=True)
 def setup_tracing_for_chaos(
-    chaos_config: ChaosConfig, 
+    chaos_config: ChaosConfig,
     mock_span_processor: SimpleSpanProcessor
 ) -> Generator[None, None, None]:
     """Setup tracing for chaos tests with mock processor."""
     tracer_provider = TracerProvider()
     tracer_provider.add_span_processor(mock_span_processor)
-    
+
     # Override global tracer setup
     from app.observability.tracing import tracer
     original_provider = tracer.provider
     tracer.provider = tracer_provider
-    
+
     try:
         yield
     finally:
@@ -158,17 +155,17 @@ def setup_tracing_for_chaos(
 def chaos_metrics(metrics_report_dir: Path):
     """Chaos-specific metrics collector."""
     metrics = {}
-    
-    def record_metric(name: str, value: float, labels: Dict[str, str] = None):
+
+    def record_metric(name: str, value: float, labels: dict[str, str] = None):
         labels = labels or {}
         key = f"{name}_{json.dumps(labels, sort_keys=True)}"
         metrics[key] = value
-    
-    def get_metric(name: str, labels: Dict[str, str] = None) -> float:
+
+    def get_metric(name: str, labels: dict[str, str] = None) -> float:
         labels = labels or {}
         key = f"{name}_{json.dumps(labels, sort_keys=True)}"
         return metrics.get(key, 0.0)
-    
+
     return record_metric, get_metric
 
 
@@ -176,11 +173,11 @@ def chaos_metrics(metrics_report_dir: Path):
 def search_slo_timer(chaos_config: ChaosConfig):
     """Timer for search SLO validation."""
     start_time = time.monotonic()
-    
+
     def check_slo():
         elapsed = (time.monotonic() - start_time) * 1000  # ms
         return elapsed <= chaos_config.search_slo_ms
-    
+
     return check_slo, start_time
 
 
@@ -188,7 +185,7 @@ def search_slo_timer(chaos_config: ChaosConfig):
 async def sample_documents(session: AsyncSession):
     """Add sample documents for testing."""
     from app.models import Document
-    
+
     documents = [
         Document(
             tenant_id="chaos-test-tenant",
@@ -197,13 +194,13 @@ async def sample_documents(session: AsyncSession):
             metadata={"category": "engineering"},
         ),
         Document(
-            tenant_id="chaos-test-tenant", 
+            tenant_id="chaos-test-tenant",
             title="Resilience Testing",
             content="Building resilient systems through controlled failures...",
             metadata={"category": "testing"},
         ),
     ]
-    
+
     session.add_all(documents)
     await session.commit()
     return documents
@@ -217,7 +214,7 @@ def qdrant_kill_command(chaos_config: ChaosConfig) -> str:
 
 
 @pytest.fixture
-def reranker_delay_config(chaos_config: ChaosConfig) -> Dict[str, int]:
+def reranker_delay_config(chaos_config: ChaosConfig) -> dict[str, int]:
     """Reranker delay configuration for testing."""
     return {
         "mock_delay_ms": chaos_config.reranker_config.mock_delay_ms,
@@ -232,7 +229,7 @@ def redis_fill_command(chaos_config: ChaosConfig) -> str:
 
 
 @pytest.fixture
-def trace_validation_config(chaos_config: ChaosConfig) -> Dict[str, Any]:
+def trace_validation_config(chaos_config: ChaosConfig) -> dict[str, Any]:
     """Configuration for trace validation."""
     return {
         "expected_services": ["search", "qdrant", "reranker"],

@@ -12,7 +12,6 @@ from uuid import UUID
 
 import redis.asyncio as aioredis
 from fastapi import HTTPException, status
-from langdetect import DetectorFactory, detect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import IndexRequest, IndexResponse
@@ -25,9 +24,6 @@ from app.observability.logging import get_logger, tenant_id_ctx
 from app.services.throttle import OutboxThrottle
 
 logger = get_logger(__name__)
-
-# langdetect profiles are non-deterministic without a fixed seed (0 <= seed <= 8).
-DetectorFactory.seed = 0
 
 EMBEDDINGS_QUEUE_STREAM = "embeddings.queue"
 _DEFAULT_LANGUAGE = "en"
@@ -49,13 +45,19 @@ class IndexingService:
         return hashlib.sha256(f"{title}\n{content}".encode()).hexdigest()
 
     @staticmethod
-    def detect_language(title: str, content: str, tenant_default: str | None = None) -> str:
+    async def detect_language(title: str, content: str, tenant_default: str | None = None) -> str:
         """ISO 639-1 language tag; tenant default (else "en") is the fallback."""
+        from app.search.langid_fasttext import get_langid
+
         sample = f"{title} {content}".strip()
         if sample:
             try:
-                return str(detect(sample))
-            except Exception:  # noqa: BLE001 — langdetect may raise on short input
+                lang, confidence = await get_langid().detect(sample, tenant_default)
+                # Log language detection
+                from app.observability import metrics
+                metrics.langid_fasttext_used_total.labels(language=lang).inc()
+                return lang
+            except Exception:
                 logger.exception("Language detection failed, using fallback")
         return tenant_default or _DEFAULT_LANGUAGE
 
@@ -68,7 +70,7 @@ class IndexingService:
         token = tenant_id_ctx.set(str(req.tenant_id))
         try:
             content_hash = self.content_hash(req.title, req.content)
-            language = req.language or self.detect_language(req.title, req.content)
+            language = req.language or await self.detect_language(req.title, req.content)
 
             existing = await documents.get_by_tenant_external_ref(
                 session, req.tenant_id, req.external_ref

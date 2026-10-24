@@ -8,6 +8,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from app.api.schemas import SearchRequest, SearchResponse
 from app.config import FeatureFlags, ShadowTrafficConfig
 from app.services.shadow_traffic import ShadowControlError, ShadowResult, ShadowTrafficService
@@ -364,19 +365,19 @@ class TestShadowLogging:
         mock_settings = AsyncMock()
         mock_settings.search_events = AsyncMock()
         mock_get_settings.return_value = mock_settings
-        
+
         # Mock queries and session
         mock_queries = AsyncMock()
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
-        
+
         # Mock SearchEventQueries constructor to return our mock
         def mock_search_event_queries_constructor(config):
             return mock_queries
-        
+
         mock_queries_class.side_effect = mock_search_event_queries_constructor
         mock_queries.insert_search_event = AsyncMock()
-    
+
         # Mock shadow result
         request = SearchRequest(query="test", tenant_id="12345678-1234-1234-1234-123456789abc", user_id="12345678-1234-1234-1234-123456789def")
         control_response = SearchResponse(
@@ -427,21 +428,21 @@ class TestShadowLogging:
         """Test shadow traffic logging with multiple treatment strategies."""
         self.config.strategies = ["weighted", "rrf"]
         ShadowTrafficService(self.config, self.feature_flags)
-        
+
         # Mock settings
         mock_settings = AsyncMock()
         mock_settings.search_events = AsyncMock()
         mock_get_settings.return_value = mock_settings
-    
+
         # Mock queries
         mock_queries = AsyncMock()
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
-        
+
         # Mock SearchEventQueries constructor to return our mock
         def mock_search_event_queries_constructor(config):
             return mock_queries
-        
+
         mock_queries_class.side_effect = mock_search_event_queries_constructor
         mock_queries.insert_search_event = AsyncMock()
 
@@ -496,7 +497,7 @@ class TestShadowIntegration:
     async def test_orchestrator_shadow_integration(self, mock_run_shadow, mock_log_shadow):
         """Test orchestrator integration with shadow traffic."""
         from app.search.orchestrator import SearchOrchestrator
-    
+
         # Create mock orchestrator with shadow service
         mock_session = AsyncMock()
         service = ShadowTrafficService(self.config, self.feature_flags)
@@ -512,7 +513,7 @@ class TestShadowIntegration:
         # Mock shadow result
         request = SearchRequest(query="test", tenant_id="12345678-1234-1234-1234-123456789abc", user_id="12345678-1234-1234-1234-123456789def")
         mock_shadow_result = AsyncMock()
-        
+
         mock_run_shadow.return_value = mock_shadow_result
 
         # Test that shadow service methods are called

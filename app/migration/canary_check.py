@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from app.config import settings
 from app.db.queries.model_migrations import update_canary_results
-from app.db.session import Session
+from app.db.session import AsyncSession
 from app.embedding.service import EmbeddingService
 from app.observability.metrics import migration_canary_similarity
 
@@ -132,7 +132,7 @@ def compute_canary_report(
 
 
 async def run_canary_check(
-    session: Session,
+    session: AsyncSession,
     migration_id: str,
     old_embedding_service: EmbeddingService,
     new_embedding_service: EmbeddingService,
@@ -302,7 +302,7 @@ def _cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
 
 
 def sample_document_ids(
-    session: Session,
+    session: AsyncSession,
     total: int,
     percentage: float,
     max_docs: int | None = None,

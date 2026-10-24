@@ -278,9 +278,9 @@ class TestCanaryCheck:
             qdrant_models.PointStruct(id="2", vector=[0.2, 0.3, 0.4]),
         ]
         new_embeddings = [[0.2, 0.3, 0.4], [0.3, 0.4, 0.5]]
-    
+
         report = compute_canary_report(old_vectors, new_embeddings, max_threshold=1.0)
-    
+
         assert report.sample_count == 2
         assert report.avg_similarity is not None
         assert report.min_similarity is not None
