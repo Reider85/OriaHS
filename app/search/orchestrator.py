@@ -46,11 +46,19 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import numpy as np
+from opentelemetry import trace
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import SearchHit, SearchRequest, SearchResponse
-from app.config import FeatureFlags, MMRConfig, RerankerConfig, SearchConfig
+from app.config import (
+    AdaptiveKConfig,
+    FeatureFlags,
+    MMRConfig,
+    RerankerConfig,
+    SearchConfig,
+    get_settings,
+)
 from app.db.queries.model_migrations import get_active_search_target
 from app.db.redis_client import get_redis_client
 from app.embedding.cache import EmbeddingCache
@@ -61,6 +69,7 @@ from app.reranker.circuit_breaker import CircuitBreakerOpen, RerankerCircuitBrea
 from app.reranker.exceptions import RerankerTimeoutException, RerankerUnavailableException
 from app.reranker.schemas import RerankCandidate, RerankResult
 from app.reranker.service import RerankerService
+from app.search.adaptive_k import AdaptiveKResult, get_adaptive_k
 from app.search.diversify import mmr_diversify_detailed
 from app.search.exceptions import (
     DeadlockError,
@@ -75,13 +84,15 @@ from app.search.pushdown import maybe_pushdown
 from app.search.speculative import SpeculativeReranker
 from app.search.vector import VectorHit, vector_search
 from app.services.personalization import PersonalizationService
-from app.services.shadow_traffic import ShadowControlError, ShadowTrafficService
+from app.services.shadow_traffic import ShadowControlError
 
 if TYPE_CHECKING:
     from app.services.ab_testing import ABTestingService
+    from app.services.shadow_traffic import ShadowTrafficService
 
 logger = logging.getLogger(__name__)
 tracer = get_tracer("search.orchestrator")
+settings = get_settings()
 
 # Sentinel returned by the rerank helpers when a pass produced no usable scores.
 _NO_RERANK: dict[UUID, float] = {}
@@ -155,6 +166,7 @@ class SearchOrchestrator:
         ab_testing_service: "ABTestingService | None" = None,
         mmr_config: "MMRConfig | None" = None,
         shadow_traffic_service: "ShadowTrafficService | None" = None,
+        adaptive_k_config: AdaptiveKConfig | None = None,
     ) -> None:
         self._session = session
         self._qdrant = qdrant_client
@@ -170,7 +182,12 @@ class SearchOrchestrator:
         self._personalization = personalization_service
         self._ab_testing = ab_testing_service
         self._mmr_config = mmr_config or MMRConfig()
+        self._adaptive_k_config = adaptive_k_config or AdaptiveKConfig()
         self._shadow = shadow_traffic_service
+        
+        # Initialize shadow traffic service with orchestrator reference
+        if self._shadow:
+            self._shadow.orchestrator = self
 
     @span(tracer, "search.request", attributes={
         "query_lang": "unknown",  # TODO: detect with langdetect if needed
@@ -273,15 +290,46 @@ class SearchOrchestrator:
                 qdrant_unavailable = True
                 metrics.search_degraded_total.labels(reason="qdrant_unavailable").inc()
 
+        # Adaptive K per tenant (ARCHITECT 6.4, PR-10). Computed before the
+        # channels start so both channels and push-down use the same K.
+        adaptive_k: AdaptiveKResult | None = None
+        if self._flags.adaptive_k_enabled:
+            adaptive_k = await get_adaptive_k(
+                self._session,
+                get_redis_client(),
+                req.tenant_id,
+                req.query,
+                self._adaptive_k_config,
+                self._config,
+            )
+            if adaptive_k is not None:
+                metrics.adaptive_k_used_total.labels(bucket=adaptive_k.bucket).inc()
+                metrics.adaptive_k_lexical.set(adaptive_k.k_lexical)
+                metrics.adaptive_k_vector.set(adaptive_k.k_vector)
+                logger.debug(
+                    "Adaptive K applied",
+                    extra={
+                        "tenant_id": str(req.tenant_id),
+                        "k_lexical": adaptive_k.k_lexical,
+                        "k_vector": adaptive_k.k_vector,
+                        "bucket": adaptive_k.bucket,
+                    },
+                )
+
+        k_lexical = adaptive_k.k_lexical if adaptive_k else self._config.k_lexical
+        k_vector = adaptive_k.k_vector if adaptive_k else self._config.k_vector
+
         # Create tasks based on availability
-        lex_task = asyncio.ensure_future(self._lexical_channel(req))
+        lex_task = asyncio.ensure_future(self._lexical_channel(req, k=k_lexical))
         vec_task = None
 
         if vector_disabled or qdrant_unavailable:
             # Skip vector channel entirely
             logger.info("Vector channel skipped due to feature flag or health check")
         else:
-            vec_task = asyncio.ensure_future(self._vector_channel(req))
+            vec_task = asyncio.ensure_future(
+                self._vector_channel(req, k=k_vector, k_lexical=k_lexical)
+            )
 
         outcome = await self._run_pipeline(req, lex_task, vec_task, deadline)
 
@@ -465,7 +513,17 @@ class SearchOrchestrator:
                 "adaptive": False,
             }
 
-        hits = self._build_hits(req, ranked, meta, rerank_applied, outcome.rerank_degraded, diversified_debug)
+        adaptive_k_debug: dict[str, Any] | None = None
+        if adaptive_k is not None and req.explain:
+            adaptive_k_debug = {
+                "adaptive_k_lexical": adaptive_k.k_lexical,
+                "adaptive_k_vector": adaptive_k.k_vector,
+            }
+
+        hits = self._build_hits(
+            req, ranked, meta, rerank_applied, outcome.rerank_degraded,
+            diversified_debug, adaptive_k_debug,
+        )
 
         # Compute facets on the top-K results if requested
         facets = {}
@@ -554,6 +612,15 @@ class SearchOrchestrator:
                         latency_ms=latency_ms,
                     )
 
+                    # PR-10: running average query length + search counter
+                    # (atomic upsert, same fire-and-forget path as search_events)
+                    if self._flags.adaptive_k_enabled:
+                        from app.db.queries import tenant_stats as tenant_stats_queries
+
+                        await tenant_stats_queries.update_avg_query_len(
+                            bg_session, req.tenant_id, len(req.query)
+                        )
+
                     logger.debug("Search event logged", extra={"tenant_id": str(req.tenant_id)})
 
             except Exception as e:
@@ -575,33 +642,55 @@ class SearchOrchestrator:
     # ------------------------------------------------------------------
 
     @span(tracer, "pg.lexical", attributes={
-        "k": lambda: self._config.k_lexical,
         "query_len": lambda: len(req.query),
     })
-    async def _lexical_channel(self, req: SearchRequest) -> list[LexicalHit]:
+    async def _lexical_channel(self, req: SearchRequest, *, k: int) -> list[LexicalHit]:
+        # The decorator lambdas are evaluated at span creation, before the
+        # adaptive K is known — set the effective K explicitly (PR-10).
+        current_span = trace.get_current_span()
+        if current_span is not None:
+            current_span.set_attribute("k", k)
         return await lexical_search(
             self._session,
             req.query,
             req.tenant_id,
             req.filters,
-            k=self._config.k_lexical,
+            k=k,
         )
 
     @span(tracer, "qdrant.vector", attributes={
-        "k": lambda: self._config.k_vector,
         "pushdown": lambda: self._flags.pushdown_enabled,
         "pushdown_count": lambda: len(pushdown_ids) if pushdown_ids else 0,
     })
-    async def _vector_channel(self, req: SearchRequest) -> list[VectorHit]:
+    async def _vector_channel(
+        self, req: SearchRequest, *, k: int, k_lexical: int
+    ) -> list[VectorHit]:
+        # Decorator lambdas run before adaptive K is known — set K explicitly (PR-10).
+        current_span = trace.get_current_span()
+        if current_span is not None:
+            current_span.set_attribute("k", k)
         pushdown_ids: list[UUID] | None = None
 
         if self._flags.pushdown_enabled:
             redis = get_redis_client()
+            # PR-10: max_candidate_ids scales proportionally with K_lexical.
+            pushdown_config = None
+            if k_lexical != self._config.k_lexical:
+                ratio = k_lexical / self._config.k_lexical
+                pushdown_config = settings.pushdown.model_copy(
+                    update={
+                        "max_candidate_ids": max(
+                            k_lexical,
+                            int(settings.pushdown.max_candidate_ids * ratio),
+                        )
+                    }
+                )
             decision = await maybe_pushdown(
                 self._session,
                 redis,
                 req.tenant_id,
                 req.filters,
+                config=pushdown_config,
             )
             metrics.pushdown_selectivity.set(
                 decision.selectivity if decision.selectivity is not None else 1.0,
@@ -643,7 +732,7 @@ class SearchOrchestrator:
             req.filters,
             collection_name=collection_name,
             model_name=model_name,
-            k=self._config.k_vector,
+            k=k,
             pushdown_ids=pushdown_ids,
         )
 
@@ -1052,6 +1141,7 @@ class SearchOrchestrator:
         rerank_applied: bool,
         rerank_degraded: bool,
         diversified_debug: dict[str, Any] | None = None,
+        adaptive_k_debug: dict[str, Any] | None = None,
     ) -> list[SearchHit]:
         titles, snippets, lex_scores, vec_scores, lex_ranks, vec_ranks = meta
         hits: list[SearchHit] = []
@@ -1075,6 +1165,9 @@ class SearchOrchestrator:
                 # Add diversification debug if applied
                 if diversified_debug:
                     debug_info.update(diversified_debug)
+                # Add adaptive K debug if applied (PR-10)
+                if adaptive_k_debug:
+                    debug_info.update(adaptive_k_debug)
             hits.append(
                 SearchHit(
                     doc_id=doc_id,
@@ -1149,6 +1242,7 @@ class SearchOrchestrator:
             ab_testing_service=self._ab_testing,
             mmr_config=self._mmr_config,
             shadow_traffic_service=self._shadow,
+            adaptive_k_config=self._adaptive_k_config,
         )
     
     async def _shadow_background(
@@ -1213,7 +1307,7 @@ class SearchOrchestrator:
                     )
             
             # Record error metric for any shadow failure
-            metrics.shadow_traffic_errors_total.inc(
+            metrics.shadow_traffic_errors_total.labels(
                 reason="shadow_background_failed",
                 experiment_id=experiment_id,
-            )
+            ).inc()

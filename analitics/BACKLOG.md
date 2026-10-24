@@ -181,7 +181,7 @@ Critical
 | PR-05 | Контекстная персонализация (§5.2.5) | PR-01 | §10.6 | §5.2.5 | `SearchContext {device, session_id, time_of_day}`, multiple profile vectors | ✅ done |
 | PR-06 | Distributed tracing OpenTelemetry (§5.2.6) | C-12 | §11.2 | §5.2.6 | `app/observability/tracing.py`, OTel SDK, export в Tempo, trace↔log correlation | ⏳ pending |
 | PR-07 | Миграционный фреймворк embedding-моделей (§5.2.7) | PR-02, C-07 | §13.1–13.4 | §5.2.7 | blue-green коллекции, backfill-воркер, канареечный reindex 1%, snapshot-on-reindex, rollback | ✅ done |
-| PR-08 | Shadow traffic (§5.2.8) | PR-03 | §11.6 | §5.2.8 | `app/services/shadow_traffic.py`, параллельный расчёт новой стратегии, лог в `search_events.variant` | ⏳ pending |
+| PR-08 | Shadow traffic (§5.2.8) | PR-03 | §11.6 | §5.2.8 | `app/services/shadow_traffic.py`, параллельный расчёт новой стратегии, лог в `search_events.variant` | ✅ done |
 | PR-09 | Chaos engineering weekly (§5.2.9) | PR-06, C-09 | §11.7 | §5.2.9 | `tests/chaos/*.py`, weekly cron в non-prod, сценарии kill Qdrant / delay reranker / fill Redis cache | ⏳ pending |
 | PR-10 | Adaptive K по `tenant_search_stats` (§5.2.10) | PR-02 | §6.4 | §5.2.10 | миграция `tenant_search_stats`, adaptive K_lexical/K_vector по doc_count и avg_query_len | ⏳ pending |
 | PR-11 | Инкрементальные фасеты (§5.2.11) | C-06 | §8.5 | §5.2.11 | Redis-кэш `facets:{query_hash}:{page}`, TTL 10 мин, incremental merge | ⏳ pending |

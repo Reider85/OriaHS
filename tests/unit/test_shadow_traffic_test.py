@@ -8,8 +8,8 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from app.api.schemas import SearchRequest, SearchResponse
 from app.config import FeatureFlags, ShadowTrafficConfig
-from app.models import SearchRequest, SearchResponse
 from app.services.shadow_traffic import ShadowControlError, ShadowResult, ShadowTrafficService
 
 
@@ -161,22 +161,21 @@ class TestShadowTrafficExecution:
         self.feature_flags.shadow_traffic_enabled = True
         self.service = ShadowTrafficService(self.config, self.feature_flags)
 
-    @patch("app.services.shadow_traffic.ShadowTrafficService.fork")
+    @patch("app.search.orchestrator.SearchOrchestrator.fork")
     async def test_run_shadow_success(self, mock_fork):
         """Test successful shadow traffic execution."""
         # Mock request and orchestrator
         request = SearchRequest(
             query="test query",
-            tenant_id="test-tenant",
-            user_id="test-user",
+            tenant_id="12345678-1234-1234-1234-123456789abc",
+            user_id="12345678-1234-1234-1234-123456789def",
         )
 
-        # Mock orchestrator and forked instances
+# Mock orchestrator and forked instances
         mock_orchestrator = MagicMock()
         mock_control_orchestrator = AsyncMock()
         mock_treatment_orchestrator = AsyncMock()
-
-        mock_fork.side_effect = [mock_control_orchestrator, mock_treatment_orchestrator]
+        mock_orchestrator.fork = MagicMock(side_effect=[mock_control_orchestrator, mock_treatment_orchestrator])
 
         # Mock search responses
         control_response = SearchResponse(
@@ -218,13 +217,13 @@ class TestShadowTrafficExecution:
         assert result.latency_ms > 0
 
         # Verify fork was called
-        assert mock_fork.call_count == 2
+        assert mock_orchestrator.fork.call_count == 2
 
         # Verify search was called on forked orchestrators
         mock_control_orchestrator.search.assert_called_once()
         mock_treatment_orchestrator.search.assert_called_once()
 
-    @patch("app.services.shadow_traffic.ShadowTrafficService.fork")
+    @patch("app.search.orchestrator.SearchOrchestrator.fork")
     async def test_run_shadow_multi_strategy(self, mock_fork):
         """Test shadow traffic execution with multiple treatment strategies."""
         self.config.strategies = ["weighted+rerank", "rrf+personalize"]
@@ -233,20 +232,20 @@ class TestShadowTrafficExecution:
         # Mock request and orchestrator
         request = SearchRequest(
             query="test query",
-            tenant_id="test-tenant",
-            user_id="test-user",
+            tenant_id="12345678-1234-1234-1234-123456789abc",
+            user_id="12345678-1234-1234-1234-123456789def",
         )
 
+# Mock orchestrator and forked instances
         mock_orchestrator = MagicMock()
         mock_control_orchestrator = AsyncMock()
         mock_treatment1_orchestrator = AsyncMock()
         mock_treatment2_orchestrator = AsyncMock()
-
-        mock_fork.side_effect = [
+        mock_orchestrator.fork = MagicMock(side_effect=[
             mock_control_orchestrator,
             mock_treatment1_orchestrator,
             mock_treatment2_orchestrator,
-        ]
+        ])
 
         # Mock responses
         control_response = SearchResponse(
@@ -276,7 +275,7 @@ class TestShadowTrafficExecution:
         assert "treatment_1" in result.treatments
         assert "treatment_2" in result.treatments
 
-    @patch("app.services.shadow_traffic.ShadowTrafficService.fork")
+    @patch("app.search.orchestrator.SearchOrchestrator.fork")
     async def test_run_shadow_timeout(self, mock_fork):
         """Test shadow traffic execution with treatment timeout."""
         # Mock a long-running treatment
@@ -287,11 +286,11 @@ class TestShadowTrafficExecution:
                 degraded=False, partial=False, personalization=None, variant="treatment"
             )
 
+        # Mock orchestrator and forked instances
         mock_orchestrator = MagicMock()
         mock_control_orchestrator = AsyncMock()
         mock_treatment_orchestrator = AsyncMock()
-
-        mock_fork.side_effect = [mock_control_orchestrator, mock_treatment_orchestrator]
+        mock_orchestrator.fork = MagicMock(side_effect=[mock_control_orchestrator, mock_treatment_orchestrator])
         mock_control_orchestrator.search.return_value = SearchResponse(
             hits=[], facets={}, total_lexical=10, total_vector=5, latency_ms=100,
             degraded=False, partial=False, personalization=None, variant="control"
@@ -301,7 +300,7 @@ class TestShadowTrafficExecution:
         # Mock asyncio.wait_for to raise timeout
         with patch("asyncio.wait_for", side_effect=TimeoutError("timeout")):
             result = await self.service.run_shadow(
-                SearchRequest(query="test", tenant_id="test", user_id="test"),
+                SearchRequest(query="test", tenant_id="12345678-1234-1234-1234-123456789abc", user_id="12345678-1234-1234-1234-123456789def"),
                 mock_orchestrator
             )
 
@@ -309,34 +308,35 @@ class TestShadowTrafficExecution:
         assert result.control is not None
         assert len(result.treatments) == 0  # Treatment failed due to timeout
 
-    @patch("app.services.shadow_traffic.ShadowTrafficService.fork")
+    @patch("app.search.orchestrator.SearchOrchestrator.fork")
     async def test_run_shadow_control_failure(self, mock_fork):
         """Test shadow traffic execution with control search failure."""
+# Mock orchestrator and forked instances
         mock_orchestrator = MagicMock()
         mock_control_orchestrator = AsyncMock()
-
-        mock_fork.return_value = mock_control_orchestrator
+        mock_orchestrator.fork = MagicMock(return_value=mock_control_orchestrator)
         mock_control_orchestrator.search.side_effect = Exception("Control failed")
 
         # Should raise ShadowControlError
         with pytest.raises(ShadowControlError):
             await self.service.run_shadow(
-                SearchRequest(query="test", tenant_id="test", user_id="test"),
+                SearchRequest(query="test", tenant_id="12345678-1234-1234-1234-123456789abc", user_id="12345678-1234-1234-1234-123456789def"),
                 mock_orchestrator
             )
 
-    @patch("app.services.shadow_traffic.ShadowTrafficService.fork")
+    @patch("app.search.orchestrator.SearchOrchestrator.fork")
     async def test_run_shadow_invalid_strategy(self, mock_fork):
         """Test shadow traffic execution with invalid strategy."""
         self.config.strategies = ["invalid_strategy"]
-        service = ShadowTrafficService(self.config, self.feature_flags)
+        ShadowTrafficService(self.config, self.feature_flags)
 
+        # Mock orchestrator and forked instances
         mock_orchestrator = MagicMock()
 
         # Should raise ValueError for invalid strategy
         with pytest.raises(ValueError, match="Invalid strategy"):
-            await service.run_shadow(
-                SearchRequest(query="test", tenant_id="test", user_id="test"),
+            await self.service.run_shadow(
+                SearchRequest(query="test", tenant_id="12345678-1234-1234-1234-123456789abc", user_id="12345678-1234-1234-1234-123456789def"),
                 mock_orchestrator
             )
 
@@ -355,24 +355,37 @@ class TestShadowLogging:
         self.feature_flags = FeatureFlags()
         self.service = ShadowTrafficService(self.config, self.feature_flags)
 
-    @patch("app.services.shadow_traffic.SearchEventQueries")
-    async def test_log_shadow_success(self, mock_queries_class):
+    @patch("app.db.queries.search_events.SearchEventQueries")
+    @patch("app.db.session.async_session_factory")
+    @patch("app.config.get_settings")
+    async def test_log_shadow_success(self, mock_get_settings, mock_session_factory, mock_queries_class):
         """Test successful shadow traffic logging."""
+        # Mock settings
+        mock_settings = AsyncMock()
+        mock_settings.search_events = AsyncMock()
+        mock_get_settings.return_value = mock_settings
+        
         # Mock queries and session
         mock_queries = AsyncMock()
         mock_session = AsyncMock()
-        mock_queries_class.return_value = mock_queries
-        mock_queries.get_session.return_value.__aenter__.return_value = mock_session
-
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+        
+        # Mock SearchEventQueries constructor to return our mock
+        def mock_search_event_queries_constructor(config):
+            return mock_queries
+        
+        mock_queries_class.side_effect = mock_search_event_queries_constructor
+        mock_queries.insert_search_event = AsyncMock()
+    
         # Mock shadow result
-        request = SearchRequest(query="test", tenant_id="test", user_id="test")
+        request = SearchRequest(query="test", tenant_id="12345678-1234-1234-1234-123456789abc", user_id="12345678-1234-1234-1234-123456789def")
         control_response = SearchResponse(
-            hits=["doc1", "doc2"], facets={}, total_lexical=2, total_vector=0,
+            hits=[], facets={}, total_lexical=2, total_vector=0,
             latency_ms=100, degraded=False, partial=False, personalization=None,
             variant="control"
         )
         treatment_response = SearchResponse(
-            hits=["doc3", "doc4"], facets={}, total_lexical=0, total_vector=2,
+            hits=[], facets={}, total_lexical=0, total_vector=2,
             latency_ms=120, degraded=False, partial=False, personalization=None,
             variant="treatment"
         )
@@ -388,6 +401,7 @@ class TestShadowLogging:
         await self.service.log_shadow(shadow_result, "user123", "tenant456", "shadow-exp")
 
         # Verify insert calls
+        await asyncio.sleep(0.1)  # Give async calls time to complete
         assert mock_queries.insert_search_event.call_count == 2
 
         # Check control call
@@ -406,32 +420,45 @@ class TestShadowLogging:
         assert treatment_call[1]["variant"] == "treatment"
         assert treatment_call[1]["experiment_id"] == "shadow-exp"
 
-    @patch("app.services.shadow_traffic.SearchEventQueries")
-    async def test_log_shadow_multi_strategy(self, mock_queries_class):
+    @patch("app.db.queries.search_events.SearchEventQueries")
+    @patch("app.db.session.async_session_factory")
+    @patch("app.config.get_settings")
+    async def test_log_shadow_multi_strategy(self, mock_get_settings, mock_session_factory, mock_queries_class):
         """Test shadow traffic logging with multiple treatment strategies."""
         self.config.strategies = ["weighted", "rrf"]
-        service = ShadowTrafficService(self.config, self.feature_flags)
-
-        # Mock queries and session
+        ShadowTrafficService(self.config, self.feature_flags)
+        
+        # Mock settings
+        mock_settings = AsyncMock()
+        mock_settings.search_events = AsyncMock()
+        mock_get_settings.return_value = mock_settings
+    
+        # Mock queries
         mock_queries = AsyncMock()
         mock_session = AsyncMock()
-        mock_queries_class.return_value = mock_queries
-        mock_queries.get_session.return_value.__aenter__.return_value = mock_session
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+        
+        # Mock SearchEventQueries constructor to return our mock
+        def mock_search_event_queries_constructor(config):
+            return mock_queries
+        
+        mock_queries_class.side_effect = mock_search_event_queries_constructor
+        mock_queries.insert_search_event = AsyncMock()
 
         # Mock shadow result with multiple treatments
-        request = SearchRequest(query="test", tenant_id="test", user_id="test")
+        request = SearchRequest(query="test", tenant_id="12345678-1234-1234-1234-123456789abc", user_id="12345678-1234-1234-1234-123456789def")
         control_response = SearchResponse(
-            hits=["doc1"], facets={}, total_lexical=1, total_vector=0,
+            hits=[], facets={}, total_lexical=1, total_vector=0,
             latency_ms=100, degraded=False, partial=False, personalization=None,
             variant="control"
         )
         treatment1_response = SearchResponse(
-            hits=["doc2"], facets={}, total_lexical=0, total_vector=1,
+            hits=[], facets={}, total_lexical=0, total_vector=1,
             latency_ms=110, degraded=False, partial=False, personalization=None,
             variant="treatment_1"
         )
         treatment2_response = SearchResponse(
-            hits=["doc3"], facets={}, total_lexical=0, total_vector=1,
+            hits=[{"doc_id": "12345678-1234-1234-1234-123456789abc", "score": 0.8, "title": "Doc 3", "snippet": "Snippet 3", "attributes": {}}], facets={}, total_lexical=0, total_vector=1,
             latency_ms=120, degraded=False, partial=False, personalization=None,
             variant="treatment_2"
         )
@@ -464,25 +491,26 @@ class TestShadowIntegration:
         self.feature_flags = FeatureFlags()
         self.feature_flags.shadow_traffic_enabled = True
 
-    @patch("app.services.shadow_traffic.ShadowTrafficService.log_shadow")
+    @patch("app.db.queries.search_events.SearchEventQueries")
     @patch("app.services.shadow_traffic.ShadowTrafficService.run_shadow")
     async def test_orchestrator_shadow_integration(self, mock_run_shadow, mock_log_shadow):
         """Test orchestrator integration with shadow traffic."""
         from app.search.orchestrator import SearchOrchestrator
-        
+    
         # Create mock orchestrator with shadow service
         mock_session = AsyncMock()
+        service = ShadowTrafficService(self.config, self.feature_flags)
         mock_orchestrator = SearchOrchestrator(
             session=mock_session,
             qdrant_client=AsyncMock(),
             embedding_service=AsyncMock(),
             embedding_cache=AsyncMock(),
             config=AsyncMock(),
-            shadow_traffic_service=self.service,
+            shadow_traffic_service=service,
         )
 
         # Mock shadow result
-        request = SearchRequest(query="test", tenant_id="test", user_id="test")
+        request = SearchRequest(query="test", tenant_id="12345678-1234-1234-1234-123456789abc", user_id="12345678-1234-1234-1234-123456789def")
         mock_shadow_result = AsyncMock()
         
         mock_run_shadow.return_value = mock_shadow_result
