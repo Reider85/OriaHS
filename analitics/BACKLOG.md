@@ -187,7 +187,7 @@ Critical
 | PR-11 | Инкрементальные фасеты (§5.2.11) | C-06 | §8.5 | §5.2.11 | Redis-кэш `facets:{query_hash}:{page}`, TTL 10 мин, incremental merge | ⏳ pending |
 | PR-12 | Многоязычность enhanced (§5.2.12) | — | §9.4, §9.3 | §5.2.12 | `fasttext-langid`, смешанные запросы token-level, транслитерация `cyrtranslit` | ⏳ pending |
 | PR-13 | Асимметричное индексирование (§5.2.13) | P-05 | §5.6 | §5.2.13 | chunking по 512 токенов overlap 50, взвешенное среднее секций (title × 3) | ✅ done |
-| PR-14 | Schema drift контракт-тесты (§5.2.14) | P-04 | §15.4 | §5.2.14 | CI gate: payload Qdrant ↔ documents Postgres, единый `QdrantPayload` | ⏳ pending |
+| PR-14 | Schema drift контракт-тесты (§5.2.14) | P-04 | §15.4 | §5.2.14 | CI gate: payload Qdrant ↔ documents Postgres, единый `QdrantPayload` | ✅ done |
 | PR-15 | Negative cache для embeddings (§5.2.15) | P-06 | §5.3 | §5.2.15 | Redis `null` cache TTL 60 сек для сломанных входов | ⏳ pending |
 
 ### 3.2. TRIZ-gates Production-Ready (ROADMAP §10.3) — 15 gate'ов, все pending
@@ -469,7 +469,7 @@ Production-Ready
 | Риск | Фаза | Mitigation | Реализовано в |
 |---|---|---|---|
 | Окно несогласованности dual-write | MVP | Outbox + reconciler + `wait_for_index` polling | ✅ P-02, P-13, C-08 |
-| Schema drift Postgres ↔ Qdrant | MVP | Единый `QdrantPayload`, контракт-тесты в CI | ✅ P-04, ⏳ PR-14 |
+| Schema drift Postgres ↔ Qdrant | MVP | Единый `QdrantPayload`, контракт-тесты в CI | ✅ P-04, ✅ PR-14 |
 | Reranker деградирует под нагрузкой | Critical | Circuit breaker + speculative rerank + `timeout_ms` | ⏳ C-03, C-04, C-05 |
 | Регрессия качества при смене модели | Critical | Nightly eval + блокировка релиза | ⏳ C-07 |
 | Qdrant недоступен — поиск парализован | Critical | Degraded mode (lex-only) + `degraded` flag | ⏳ C-09 |

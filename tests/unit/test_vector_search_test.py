@@ -210,24 +210,24 @@ async def test_results_sorted_by_score_desc_and_k_forwarded() -> None:
         call = client.search.await_args
         assert call.kwargs["limit"] == 15  # k*3 = 15
         
-# Test flag off
-            mock_settings.feature_flags.asymmetric_indexing_enabled = False
-            # Create new service instance with updated settings
-            service = MagicMock(spec=EmbeddingService)
-            hits = await vector_search(
-                session=_fake_session({}),
-                qdrant_client=client,
-                embedding_service=service,
-                embedding_cache=cache,
-                query="q",
-                tenant_id=tenant,
-                filters=SearchFilters(),
-                collection_name="test_collection",
-                model_name="bge-m3",
-                k=5,
-            )
-            call = client.search.await_args
-            assert call.kwargs["limit"] == 5  # k when flag off
+        # Test flag off
+        mock_settings.feature_flags.asymmetric_indexing_enabled = False
+        # Create new service instance with updated settings
+        service = MagicMock(spec=EmbeddingService)
+        hits = await vector_search(
+            session=_fake_session({}),
+            qdrant_client=client,
+            embedding_service=service,
+            embedding_cache=cache,
+            query="q",
+            tenant_id=tenant,
+            filters=SearchFilters(),
+            collection_name="test_collection",
+            model_name="bge-m3",
+            k=5,
+        )
+        call = client.search.await_args
+        assert call.kwargs["limit"] == 5  # k when flag off
 
 
 async def test_vector_search_aggregates_duplicate_doc_ids() -> None:

@@ -108,6 +108,15 @@ else
     exit 1
 fi
 
+# Run contract tests — schema drift gate (PR-14)
+log "Running contract tests (schema drift gate)..."
+if pytest tests/contract/ -v; then
+    log "✓ Contract tests passed"
+else
+    log "✗ Contract tests failed"
+    exit 1
+fi
+
 # Run chaos engineering tests
 log "Running chaos engineering tests..."
 if pytest tests/chaos/ -m chaos -v; then
@@ -125,6 +134,15 @@ if docker ps | grep -q "postgres\|qdrant\|redis"; then
         log "✓ Integration tests passed"
     else
         log "✗ Integration tests failed"
+        exit 1
+    fi
+    
+    # Run slow contract tests (roundtrip verification)
+    log "Running slow contract tests (roundtrip verification)..."
+    if pytest tests/contract/ -m slow -v --tb=short; then
+        log "✓ Slow contract tests passed"
+    else
+        log "✗ Slow contract tests failed"
         exit 1
     fi
 else

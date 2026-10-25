@@ -1630,7 +1630,7 @@ Embedding cache (P-06) хранит только успешные embeddings. Е
 - [ ] **PR-11** — Инкрементальные фасеты: Redis-кэш `facets:{query_hash}:{page}`, TTL 10 мин, incremental merge для load more.
 - [ ] **PR-12** — Многоязычность enhanced: `fasttext-langid`, смешанные запросы token-level, `cyrtranslit`, NFC-нормализация.
 - [x] **PR-13** — Асимметричное индексирование: chunking 512 overlap 50, взвешенное среднее (title × 3, abstract × 2, body × 1), `max(score)` агрегация.
-- [ ] **PR-14** — Schema drift контракт-тесты: `tests/contract/test_schema_drift.py`, CI gate, `QdrantPayload extra="forbid"`.
+- [x] **PR-14** — Schema drift контракт-тесты: `tests/contract/test_schema_drift.py`, CI gate, `QdrantPayload extra="forbid"`.
 - [ ] **PR-15** — Negative cache: Redis `null` cache TTL 60 сек, staggered TTL, `negative_cache_hits_total` метрика.
 - [ ] **TRIZ-gates Production-Ready** (ROADMAP §5.3 / §10.3) — все 15 встроены:
   - [ ] Adaptive `α` в EMA (PR-01)
@@ -1646,7 +1646,7 @@ Embedding cache (P-06) хранит только успешные embeddings. Е
   - [ ] Инкрементальные фасеты (PR-11)
   - [ ] Смешанные запросы (PR-12)
   - [ ] Асимметричное индексирование (PR-13)
-  - [ ] Schema drift контракт-тесты (PR-14)
+  - [x] Schema drift контракт-тесты (PR-14)
   - [ ] Negative cache (PR-15)
 - [ ] **DoD Production-Ready** (ROADMAP §5.4) — все условия выполнены:
   - [ ] `profile_vector` обновляется при клике; cold-start → стабилизация через 10 кликов.
@@ -1686,7 +1686,7 @@ Embedding cache (P-06) хранит только успешные embeddings. Е
 - [ ] **Production-Ready DoD** — `scripts/run_dod_check_prod.sh` (создать) — зелёный:
   - [ ] `pytest tests/unit/` — все зелёные.
   - [ ] `pytest tests/integration/` — все зелёные.
-  - [ ] `pytest tests/contract/` — зелёный (PR-14).
+  - [x] `pytest tests/contract/` — зелёный (PR-14).
   - [ ] `pytest -m chaos` — зелёный (PR-09, в non-prod).
   - [ ] `pytest tests/e2e/test_prod_dod.py` — зелёный.
 

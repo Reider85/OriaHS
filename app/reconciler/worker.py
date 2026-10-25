@@ -18,9 +18,10 @@ from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
+from qdrant_client.http import models as qmodels
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import ReconcilerConfig, settings, EmbeddingConfig
+from app.config import EmbeddingConfig, ReconcilerConfig, settings
 from app.db.models import Document
 from app.db.queries import documents as documents_queries
 from app.db.queries import outbox as outbox_queries
@@ -250,7 +251,7 @@ class ReconcilerWorker:
 
         # Check if asymmetric indexing is enabled
         asymmetric_enabled = settings.feature_flags.asymmetric_indexing_enabled
-        
+
         if asymmetric_enabled:
             # Use asymmetric indexing with chunking
             embedded = await self._get_embedding_service().embed_document(
@@ -258,7 +259,7 @@ class ReconcilerWorker:
                 content=document.content,
                 attributes=document.attributes or {}
             )
-            
+
             # Build points for each chunk
             points = []
             for embedded_chunk in embedded.chunks:
@@ -275,14 +276,14 @@ class ReconcilerWorker:
                     chunk_idx=embedded_chunk.chunk.chunk_idx,
                     section_type=embedded_chunk.chunk.section_type,
                 ).model_dump(mode="json")
-                
+
                 point_id = self._qdrant.chunk_point_id(document.id, embedded_chunk.chunk.chunk_idx)
                 points.append(qmodels.PointStruct(
                     id=point_id,
                     vector=embedded_chunk.vector.tolist(),
                     payload=payload,
                 ))
-            
+
             # Upsert points and prune stale chunks
             await self._qdrant.upsert_points(points)
             await self._qdrant.prune_chunks(document.id, keep=len(points))
