@@ -353,3 +353,153 @@ async def test_missing_document_raises_value_error() -> None:
 
     with pytest.raises(ValueError, match="not found"):
         await worker._handle_upsert(session, _row())
+
+
+# --- PR-13 asymmetric indexing tests -----------------------------------------
+
+
+async def test_asymmetric_indexing_multi_chunks_upsert_points(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test asymmetric indexing with multiple chunks calls upsert_points and prune."""
+    from app.embedding.chunking import DocumentChunk
+    from qdrant_client.http import models as qmodels
+    
+    doc = _document(content_hash="doc-hash")  # Long content
+    doc.title = "Test Title"
+    doc.content = "word " * 1000
+    session = AsyncMock(spec=AsyncSession)
+    session.get = AsyncMock(return_value=doc)
+    qdrant = AsyncMock()
+    qdrant.get_point_content_hash.return_value = None
+    qdrant.upsert_points = AsyncMock()
+    qdrant.prune_chunks = AsyncMock()
+    cache = AsyncMock()
+    cache.get_by_content_hash.return_value = None
+    
+    # Mock embed_document to return multi-chunk result
+    embedding = AsyncMock()
+    embedded = AsyncMock()
+    embedded.strategy = "multi"
+    embedded.chunks = [
+        AsyncMock(chunk=DocumentChunk(text="chunk1", chunk_idx=0, section_type="body"), vector=_vector(1)[0]),
+        AsyncMock(chunk=DocumentChunk(text="chunk2", chunk_idx=1, section_type="body"), vector=_vector(2)[0]),
+    ]
+    embedding.embed_document.return_value = embedded
+    worker, _ = _build_worker(session=session, qdrant=qdrant, embedding=embedding, cache=cache)
+    mark_done = AsyncMock()
+    monkeypatch.setattr(outbox_mod, "mark_done", mark_done)
+    row = _row(content_hash="doc-hash")
+
+    await worker._process_single(session, row)
+
+    # Verify embed_document was called with title, content, attributes
+    embedding.embed_document.assert_awaited_once_with(
+        title="Test Title",
+        content="word " * 1000,
+        attributes={}
+    )
+    
+    # Verify upsert_points called with 2 points
+    qdrant.upsert_points.assert_awaited_once()
+    assert len(qdrant.upsert_points.await_args.args[0]) == 2
+    
+    # Verify prune_chunks called with keep=2
+    qdrant.prune_chunks.assert_awaited_once_with(doc.id, keep=2)
+
+
+async def test_asymmetric_indexing_single_chunk_uses_upsert_point(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test asymmetric indexing with single chunk uses upsert_point (backward compatibility)."""
+    from app.embedding.chunking import DocumentChunk
+    
+    doc = _document(content_hash="doc-hash")  # Test
+    doc.title = "Test"
+    doc.content = "short content"
+    session = AsyncMock(spec=AsyncSession)
+    session.get = AsyncMock(return_value=doc)
+    qdrant = AsyncMock()
+    qdrant.get_point_content_hash.return_value = None
+    qdrant.upsert_point = AsyncMock()
+    qdrant.prune_chunks = AsyncMock()
+    cache = AsyncMock()
+    cache.get_by_content_hash.return_value = None
+    
+    # Mock embed_document to return single chunk
+    embedding = AsyncMock()
+    embedded = AsyncMock()
+    embedded.strategy = "single"
+    embedded.chunks = [
+        AsyncMock(chunk=DocumentChunk(text="test", chunk_idx=0, section_type="document"), vector=_vector(1)[0])
+    ]
+    embedding.embed_document.return_value = embedded
+    worker, _ = _build_worker(session=session, qdrant=qdrant, embedding=embedding, cache=cache)
+    mark_done = AsyncMock()
+    monkeypatch.setattr(outbox_mod, "mark_done", mark_done)
+    row = _row(content_hash="doc-hash")
+
+    await worker._process_single(session, row)
+
+    # Verify upsert_point called (not upsert_points)
+    qdrant.upsert_point.assert_awaited_once()
+    qdrant.upsert_points.assert_not_awaited()
+    
+    # Verify prune_chunks called with keep=1
+    qdrant.prune_chunks.assert_awaited_once_with(doc.id, keep=1)
+
+
+async def test_asymmetric_indexing_flag_off_uses_legacy_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test asymmetric indexing disabled uses legacy embedding path."""
+    from unittest.mock import patch
+    
+    doc = _document(content_hash="doc-hash")
+    session = AsyncMock(spec=AsyncSession)
+    session.get = AsyncMock(return_value=doc)
+    qdrant = AsyncMock()
+    qdrant.get_point_content_hash.return_value = None
+    qdrant.upsert_point = AsyncMock()
+    qdrant.prune_chunks = AsyncMock()
+    cache = AsyncMock()
+    cache.get_by_content_hash.return_value = None
+    cache.set_by_content_hash = AsyncMock()
+    embedding = AsyncMock()
+    embedding.embed_texts.return_value = _vector()
+    worker, _ = _build_worker(session=session, qdrant=qdrant, embedding=embedding, cache=cache)
+    mark_done = AsyncMock()
+    monkeypatch.setattr(outbox_mod, "mark_done", mark_done)
+    row = _row(content_hash="doc-hash")
+
+    # Patch settings to disable asymmetric indexing
+    with patch('app.config.settings') as mock_settings:
+        mock_settings.feature_flags.asymmetric_indexing_enabled = False
+        
+        await worker._process_single(session, row)
+
+    # Verify legacy embed_texts called (not embed_document)
+    embedding.embed_texts.assert_awaited_once_with([doc.content])
+    embedding.embed_document.assert_not_awaited()
+    
+    # Verify legacy upsert_point called
+    qdrant.upsert_point.assert_awaited_once()
+    
+    # Verify prune_chunks called to clean any stale chunks
+    qdrant.prune_chunks.assert_awaited_once_with(doc.id, keep=1)
+
+
+async def test_asymmetric_indexing_fast_path_still_works(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that fast-path skip works with asymmetric indexing enabled."""
+    doc = _document(content_hash="same")
+    session = AsyncMock(spec=AsyncSession)
+    session.get = AsyncMock(return_value=doc)
+    qdrant = AsyncMock()
+    qdrant.get_point_content_hash.return_value = "same"  # Fast-path trigger
+    embedding = AsyncMock()
+    embedding.embed_document.side_effect = AssertionError("should not be called")
+    worker, _ = _build_worker(session=session, qdrant=qdrant, embedding=embedding, cache=AsyncMock())
+    mark_done = AsyncMock()
+    monkeypatch.setattr(outbox_mod, "mark_done", mark_done)
+
+    await worker._process_single(session, _row(content_hash="same"))
+
+    # Verify no embedding or upsert calls on fast-path
+    embedding.embed_document.assert_not_awaited()
+    qdrant.upsert_point.assert_not_awaited()
+    qdrant.prune_chunks.assert_not_awaited()
+    mark_done.assert_awaited_once()

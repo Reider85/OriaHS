@@ -42,6 +42,10 @@ def _reset_metrics() -> None:  # type: ignore[misc]
         metrics.search_partial_total,
         metrics.eval_regression_detected_total,
         metrics.pushdown_selectivity,
+        # PR-13 asymmetric indexing metrics
+        metrics.asymmetric_indexing_chunks_total,
+        metrics.asymmetric_indexing_docs_total,
+        metrics.vector_search_chunk_aggregation_total,
     ]:
         if hasattr(collector, "clear"):
             collector.clear()
@@ -251,7 +255,7 @@ class TestQdrantPushdownRate:
 
 
 class TestAllMetricsExposed:
-    """Catch-all: all 34 metrics (7 MVP + 15 Critical + 3 extras + 2 B-09 + 5 PR-07) must appear in the exposition output."""
+    """Catch-all: all 37 metrics (7 MVP + 15 Critical + 3 extras + 2 B-09 + 5 PR-07 + 3 PR-13) must appear in the exposition output."""
 
     @pytest.mark.parametrize(
         "metric_name",
@@ -294,6 +298,10 @@ class TestAllMetricsExposed:
             "migration_canary_similarity",
             "migration_snapshots_created_total",
             "migration_rollbacks_total",
+            # PR-13 asymmetric indexing metrics
+            "asymmetric_indexing_chunks_total",
+            "asymmetric_indexing_docs_total",
+            "vector_search_chunk_aggregation_total",
         ],
     )
     def test_metric_present(self, metric_name: str) -> None:

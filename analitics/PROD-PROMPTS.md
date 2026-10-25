@@ -1629,7 +1629,7 @@ Embedding cache (P-06) хранит только успешные embeddings. Е
 - [ ] **PR-10** — Adaptive K: `tenant_search_stats` таблица, `compute_adaptive_k`, адаптивные K_lexical/K_vector в рантайме.
 - [ ] **PR-11** — Инкрементальные фасеты: Redis-кэш `facets:{query_hash}:{page}`, TTL 10 мин, incremental merge для load more.
 - [ ] **PR-12** — Многоязычность enhanced: `fasttext-langid`, смешанные запросы token-level, `cyrtranslit`, NFC-нормализация.
-- [ ] **PR-13** — Асимметричное индексирование: chunking 512 overlap 50, взвешенное среднее (title × 3, abstract × 2, body × 1), `max(score)` агрегация.
+- [x] **PR-13** — Асимметричное индексирование: chunking 512 overlap 50, взвешенное среднее (title × 3, abstract × 2, body × 1), `max(score)` агрегация.
 - [ ] **PR-14** — Schema drift контракт-тесты: `tests/contract/test_schema_drift.py`, CI gate, `QdrantPayload extra="forbid"`.
 - [ ] **PR-15** — Negative cache: Redis `null` cache TTL 60 сек, staggered TTL, `negative_cache_hits_total` метрика.
 - [ ] **TRIZ-gates Production-Ready** (ROADMAP §5.3 / §10.3) — все 15 встроены:

@@ -83,17 +83,13 @@ class QdrantService:
     async def delete_point(
         self, doc_id: UUID, collection_name: str | None = None
     ) -> None:
-        """Remove the point for ``doc_id`` (idempotent — missing point is OK).
+        """Remove all points for ``doc_id`` (idempotent — missing points are OK).
         
         Args:
             doc_id: Document ID
             collection_name: Optional collection name (default: service's collection)
         """
-        collection = collection_name or self._collection
-        await self._client.delete(
-            collection_name=collection,
-            points_selector=qmodels.PointIdsList(points=[str(doc_id)]),
-        )
+        await self.delete_document_points(doc_id, collection_name)
 
     async def upsert_points(
         self,
@@ -119,6 +115,55 @@ class QdrantService:
             collection_name: Name of the collection to delete
         """
         await self._client.delete_collection(collection_name)
+
+    async def delete_document_points(
+        self, doc_id: UUID, collection_name: str | None = None
+    ) -> None:
+        """Remove all points for a document ID using filter (idempotent).
+        
+        Args:
+            doc_id: Document ID
+            collection_name: Optional collection name (default: service's collection)
+        """
+        collection = collection_name or self._collection
+        filter_condition = qmodels.Filter(
+            must=[qmodels.FieldCondition(
+                key="doc_id",
+                match=qmodels.MatchValue(value=str(doc_id))
+            )]
+        )
+        await self._client.delete(
+            collection_name=collection,
+            points_selector=filter_condition,
+        )
+
+    async def prune_chunks(
+        self, doc_id: UUID, keep: int, collection_name: str | None = None
+    ) -> None:
+        """Remove stale chunks beyond keep count (idempotent).
+        
+        Args:
+            doc_id: Document ID
+            keep: Number of chunks to keep (chunks with chunk_idx >= keep are deleted)
+            collection_name: Optional collection name (default: service's collection)
+        """
+        collection = collection_name or self._collection
+        filter_condition = qmodels.Filter(
+            must=[
+                qmodels.FieldCondition(
+                    key="doc_id",
+                    match=qmodels.MatchValue(value=str(doc_id))
+                ),
+                qmodels.FieldCondition(
+                    key="chunk_idx",
+                    match=qmodels.Range(gte=keep)
+                )
+            ]
+        )
+        await self._client.delete(
+            collection_name=collection,
+            points_selector=filter_condition,
+        )
 
     async def collection_exists(self, collection_name: str) -> bool:
         """Check if a collection exists.
@@ -253,6 +298,25 @@ class QdrantService:
             snapshot_path=snapshot_path,
             timeout=timeout,
         )
+
+    @staticmethod
+    def chunk_point_id(doc_id: UUID, chunk_idx: int) -> str:
+        """Generate Qdrant point ID for a chunk.
+        
+        Args:
+            doc_id: Document UUID
+            chunk_idx: Chunk index (0 for single chunk)
+            
+        Returns:
+            Qdrant point ID (string UUID)
+        """
+        import uuid
+        NAMESPACE_URL = uuid.NAMESPACE_URL
+        
+        if chunk_idx == 0:
+            return str(doc_id)  # Backward compatibility for chunk 0
+        else:
+            return str(uuid.uuid5(NAMESPACE_URL, f"{doc_id}:{chunk_idx}"))
 
 
 __all__ = ["QdrantService"]

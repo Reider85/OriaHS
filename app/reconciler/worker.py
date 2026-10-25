@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import ReconcilerConfig, settings
+from app.config import ReconcilerConfig, settings, EmbeddingConfig
 from app.db.models import Document
 from app.db.queries import documents as documents_queries
 from app.db.queries import outbox as outbox_queries
@@ -248,19 +248,63 @@ class ReconcilerWorker:
         if should_skip_upsert(target_hash, existing_hash):
             return  # fast-path: Qdrant already holds this exact content
 
-        vector = await self._get_document_vector(document)
-        payload = QdrantPayload(
-            doc_id=document.id,
-            tenant_id=document.tenant_id,
-            language=document.language,
-            tags=document.tags,
-            attributes=document.attributes,
-            model_name=document.embedding_model,
-            model_rev=document.embedding_rev,
-            created_at=document.created_at,
-            content_hash=document.content_hash,
-        ).model_dump(mode="json")
-        await self._qdrant.upsert_point(document.id, vector.tolist(), payload)
+        # Check if asymmetric indexing is enabled
+        asymmetric_enabled = settings.feature_flags.asymmetric_indexing_enabled
+        
+        if asymmetric_enabled:
+            # Use asymmetric indexing with chunking
+            embedded = await self._get_embedding_service().embed_document(
+                title=document.title,
+                content=document.content,
+                attributes=document.attributes or {}
+            )
+            
+            # Build points for each chunk
+            points = []
+            for embedded_chunk in embedded.chunks:
+                payload = QdrantPayload(
+                    doc_id=document.id,
+                    tenant_id=document.tenant_id,
+                    language=document.language,
+                    tags=document.tags,
+                    attributes=document.attributes,
+                    model_name=document.embedding_model,
+                    model_rev=document.embedding_rev,
+                    created_at=document.created_at,
+                    content_hash=document.content_hash,
+                    chunk_idx=embedded_chunk.chunk.chunk_idx,
+                    section_type=embedded_chunk.chunk.section_type,
+                ).model_dump(mode="json")
+                
+                point_id = self._qdrant.chunk_point_id(document.id, embedded_chunk.chunk.chunk_idx)
+                points.append(qmodels.PointStruct(
+                    id=point_id,
+                    vector=embedded_chunk.vector.tolist(),
+                    payload=payload,
+                ))
+            
+            # Upsert points and prune stale chunks
+            await self._qdrant.upsert_points(points)
+            await self._qdrant.prune_chunks(document.id, keep=len(points))
+        else:
+            # Legacy single embedding (P-05)
+            vector = await self._get_document_vector(document)
+            payload = QdrantPayload(
+                doc_id=document.id,
+                tenant_id=document.tenant_id,
+                language=document.language,
+                tags=document.tags,
+                attributes=document.attributes,
+                model_name=document.embedding_model,
+                model_rev=document.embedding_rev,
+                created_at=document.created_at,
+                content_hash=document.content_hash,
+                chunk_idx=0,
+                section_type=None,
+            ).model_dump(mode="json")
+            await self._qdrant.upsert_point(document.id, vector.tolist(), payload)
+            # Prune any stale chunks from previous asymmetric indexing
+            await self._qdrant.prune_chunks(document.id, keep=1)
 
     async def _handle_dual_write(
         self,

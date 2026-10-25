@@ -25,3 +25,5 @@ class QdrantPayload(BaseModel):
     model_rev: int
     created_at: datetime
     content_hash: str
+    chunk_idx: int = 0
+    section_type: str | None = None

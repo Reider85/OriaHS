@@ -191,7 +191,173 @@ async def test_results_sorted_by_score_desc_and_k_forwarded() -> None:
 
     assert hits == sorted(hits, key=lambda h: -h.score)
     call = client.search.await_args
-    assert call.kwargs["limit"] == 5
+    # With asymmetric indexing enabled (default), limit should be 15 (k*3, capped at 200)
+    from unittest.mock import patch
+    with patch('app.config.settings') as mock_settings:
+        mock_settings.feature_flags.asymmetric_indexing_enabled = True
+        hits = await vector_search(
+            session=_fake_session({}),
+            qdrant_client=client,
+            embedding_service=service,
+            embedding_cache=cache,
+            query="q",
+            tenant_id=tenant,
+            filters=SearchFilters(),
+            collection_name="test_collection",
+            model_name="bge-m3",
+            k=5,
+        )
+        call = client.search.await_args
+        assert call.kwargs["limit"] == 15  # k*3 = 15
+        
+# Test flag off
+            mock_settings.feature_flags.asymmetric_indexing_enabled = False
+            # Create new service instance with updated settings
+            service = MagicMock(spec=EmbeddingService)
+            hits = await vector_search(
+                session=_fake_session({}),
+                qdrant_client=client,
+                embedding_service=service,
+                embedding_cache=cache,
+                query="q",
+                tenant_id=tenant,
+                filters=SearchFilters(),
+                collection_name="test_collection",
+                model_name="bge-m3",
+                k=5,
+            )
+            call = client.search.await_args
+            assert call.kwargs["limit"] == 5  # k when flag off
+
+
+async def test_vector_search_aggregates_duplicate_doc_ids() -> None:
+    """Test that vector search aggregates max(score) for duplicate doc_ids."""
+    tenant = uuid.uuid4()
+    doc_id = str(uuid.uuid4())
+    
+    # Return 3 points for the same doc_id with different scores
+    client = MagicMock()
+    client.search = AsyncMock(
+        return_value=[
+            _scored_point(doc_id, 0.9, str(tenant)),  # highest score
+            _scored_point(doc_id, 0.7, str(tenant)),  # middle score
+            _scored_point(doc_id, 0.5, str(tenant)),  # lowest score
+        ]
+    )
+    cache = MagicMock(spec=EmbeddingCache)
+    cache.get_query_embedding = AsyncMock(return_value=await _hit_vector())
+    service = MagicMock(spec=EmbeddingService)
+    
+    # Mock session to return title for the doc_id
+    session = _fake_session({doc_id: {"title": "Test Doc", "snippet": "Test snippet"}})
+
+    hits = await vector_search(
+        session=session,
+        qdrant_client=client,
+        embedding_service=service,
+        embedding_cache=cache,
+        query="q",
+        tenant_id=tenant,
+        filters=SearchFilters(),
+        collection_name="test_collection",
+        model_name="bge-m3",
+        k=5,
+    )
+    
+    # Should have only 1 hit (aggregated to max score)
+    assert len(hits) == 1
+    assert hits[0].doc_id == uuid.UUID(doc_id)
+    assert hits[0].score == (0.9 + 1) / 2  # max score normalized
+    assert hits[0].title == "Test Doc"
+
+
+async def test_vector_search_no_aggregation_for_unique_docs() -> None:
+    """Test that vector search doesn't aggregate when all doc_ids are unique."""
+    tenant = uuid.uuid4()
+    doc_a, doc_b, doc_c = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    
+    client = MagicMock()
+    client.search = AsyncMock(
+        return_value=[
+            _scored_point(doc_a, 0.9, str(tenant)),
+            _scored_point(doc_b, 0.7, str(tenant)),
+            _scored_point(doc_c, 0.5, str(tenant)),
+        ]
+    )
+    cache = MagicMock(spec=EmbeddingCache)
+    cache.get_query_embedding = AsyncMock(return_value=await _hit_vector())
+    service = MagicMock(spec=EmbeddingService)
+    
+    # Mock session to return titles
+    session = _fake_session({
+        doc_a: {"title": "Doc A", "snippet": "Snippet A"},
+        doc_b: {"title": "Doc B", "snippet": "Snippet B"},
+        doc_c: {"title": "Doc C", "snippet": "Snippet C"},
+    })
+
+    hits = await vector_search(
+        session=session,
+        qdrant_client=client,
+        embedding_service=service,
+        embedding_cache=cache,
+        query="q",
+        tenant_id=tenant,
+        filters=SearchFilters(),
+        collection_name="test_collection",
+        model_name="bge-m3",
+        k=5,
+    )
+    
+    # Should have 3 hits (no aggregation needed)
+    assert len(hits) == 3
+    assert {hit.doc_id for hit in hits} == {uuid.UUID(doc_a), uuid.UUID(doc_b), uuid.UUID(doc_c)}
+
+
+async def test_vector_search_truncates_to_k_after_aggregation() -> None:
+    """Test that search returns at most k hits after aggregation."""
+    tenant = uuid.uuid4()
+    doc_a, doc_b, doc_c, doc_d = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    
+    # Return 4 points: 2 for doc_a, 1 for doc_b, 1 for doc_c (should aggregate to 3)
+    client = MagicMock()
+    client.search = AsyncMock(
+        return_value=[
+            _scored_point(doc_a, 0.9, str(tenant)),  # doc_a - high score
+            _scored_point(doc_b, 0.8, str(tenant)),  # doc_b
+            _scored_point(doc_a, 0.7, str(tenant)),  # doc_a - low score (will be aggregated)
+            _scored_point(doc_c, 0.6, str(tenant)),  # doc_c
+        ]
+    )
+    cache = MagicMock(spec=EmbeddingCache)
+    cache.get_query_embedding = AsyncMock(return_value=await _hit_vector())
+    service = MagicMock(spec=EmbeddingService)
+    
+    # Mock session to return titles
+    session = _fake_session({
+        doc_a: {"title": "Doc A", "snippet": "Snippet A"},
+        doc_b: {"title": "Doc B", "snippet": "Snippet B"},
+        doc_c: {"title": "Doc C", "snippet": "Snippet C"},
+    })
+
+    hits = await vector_search(
+        session=session,
+        qdrant_client=client,
+        embedding_service=service,
+        embedding_cache=cache,
+        query="q",
+        tenant_id=tenant,
+        filters=SearchFilters(),
+        collection_name="test_collection",
+        model_name="bge-m3",
+        k=2,  # Request top 2
+    )
+    
+    # Should have 2 hits (aggregated then truncated to k)
+    assert len(hits) == 2
+    # Should be doc_a (with max score) and doc_b
+    hit_doc_ids = {hit.doc_id for hit in hits}
+    assert uuid.UUID(doc_a) in hit_doc_ids
+    assert uuid.UUID(doc_b) in hit_doc_ids
 
 
 async def test_query_embedding_cache_miss_calls_embed_and_stores() -> None:

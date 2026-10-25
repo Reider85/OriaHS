@@ -108,7 +108,7 @@ class ObservabilityConfig(BaseSettings):
     otel_endpoint: str = "http://otel-collector:4317"
     metrics_path: str = "/metrics"
     log_level: str = "INFO"
-    # Total metrics: 29 base + 5 migration = 34 total metrics
+    # Total metrics: 29 base + 5 migration + 3 asymmetric indexing = 37 total metrics
 
 
 class RerankerConfig(BaseSettings):

@@ -6,6 +6,7 @@ ARCHITECT §5.1 (model selection), §5.2 (batching), ROADMAP §3.2.3.
 import asyncio
 import logging
 import time
+from typing import Any
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -138,3 +139,86 @@ class EmbeddingService:
         if self._cache is not None:
             await self._cache.set_query_embedding(normalized_query, self._config.model_name, vector)
         return vector
+
+    @span(tracer, "embedding.document", attributes={
+        "strategy": lambda: embedded.strategy,
+        "chunks_count": lambda: len(embedded.chunks),
+    })
+    async def embed_document(
+        self, 
+        title: str, 
+        content: str, 
+        attributes: dict[str, Any] | None = None
+    ) -> "EmbeddedDocument":
+        """Embed a document using asymmetric chunking strategy.
+        
+        Args:
+            title: Document title
+            content: Document content
+            attributes: Document attributes (may contain abstract)
+            
+        Returns:
+            EmbeddedDocument with strategy and chunk embeddings
+        """
+        from app.embedding.chunking import ChunkingService
+        from app.observability import metrics
+        
+        # Create chunking service with lazy tokenizer
+        chunking = ChunkingService(tokenizer=None)  # Uses default lazy tokenizer
+        
+        # Plan chunking strategy
+        plan = chunking.plan(title, content, attributes or {})
+        
+        # Embed all texts (batched, cache-aware)
+        vectors = await self.embed_texts(plan.embed_texts)
+        
+        # Apply weighted average if needed
+        if plan.strategy == "weighted" and plan.weights is not None:
+            # Map embeddings to section names
+            section_names = ["title"]  # Always present
+            if attributes and "abstract" in attributes:
+                section_names.append("abstract")
+            section_names.append("body")
+            
+            # Build section embeddings dict
+            section_embeddings = {}
+            for i, name in enumerate(section_names):
+                if i < len(vectors):
+                    section_embeddings[name] = vectors[i]
+            
+            # Compute weighted average
+            vector = chunking.weighted_average(section_embeddings, {
+                name: w for name, w in zip(section_names, plan.weights)
+                if w > 0
+            })
+            
+            # Replace all vectors with the single weighted result
+            vectors = [vector] * len(plan.chunks)  # One per chunk for consistency
+        
+        # Emit metrics
+        metrics.asymmetric_indexing_docs_total.labels(chunking_type=plan.strategy).inc()
+        for chunk in plan.chunks:
+            section_type = chunk.section_type or "none"
+            metrics.asymmetric_indexing_chunks_total.labels(section_type=section_type).inc()
+        
+        # Build result
+        from dataclasses import dataclass
+        @dataclass
+        class EmbeddedChunk:
+            chunk: "DocumentChunk"
+            vector: np.ndarray
+        
+        @dataclass
+        class EmbeddedDocument:
+            strategy: str
+            chunks: list[EmbeddedChunk]
+        
+        embedded = EmbeddedDocument(
+            strategy=plan.strategy,
+            chunks=[
+                EmbeddedChunk(chunk=chunk, vector=vector)
+                for chunk, vector in zip(plan.chunks, vectors)
+            ]
+        )
+        
+        return embedded

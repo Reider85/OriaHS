@@ -192,6 +192,22 @@ search_partial_total = Counter(
     ["tenant_id"],
 )
 
+# PR-13 asymmetric indexing metrics
+asymmetric_indexing_chunks_total = Counter(
+    "asymmetric_indexing_chunks_total",
+    "Total number of document chunks created during asymmetric indexing.",
+    labelnames=["section_type"],  # "document", "weighted", "body"
+)
+asymmetric_indexing_docs_total = Counter(
+    "asymmetric_indexing_docs_total",
+    "Total number of documents processed by asymmetric indexing strategy.",
+    labelnames=["chunking_type"],  # "single", "weighted", "multi"
+)
+vector_search_chunk_aggregation_total = Counter(
+    "vector_search_chunk_aggregation_total",
+    "Total number of times max(score) aggregation was applied to collapse duplicate chunks per document.",
+)
+
 # Personalization metrics (PR-01)
 profile_vector_updates_total = Counter(
     "profile_vector_updates_total",
@@ -430,6 +446,10 @@ __all__ = [
     "mmr_diversify_total",
     "mmr_diversity_score",
     "mmr_lambda_param",
+    # PR-13 asymmetric indexing metrics
+    "asymmetric_indexing_chunks_total",
+    "asymmetric_indexing_docs_total",
+    "vector_search_chunk_aggregation_total",
     # Adaptive K metrics (PR-10)
     "adaptive_k_used_total",
     "adaptive_k_lexical",

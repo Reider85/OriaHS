@@ -22,6 +22,7 @@ from qdrant_client.http.models import ScoredPoint
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models.document import Document
 from app.embedding.cache import EmbeddingCache
 from app.embedding.service import EmbeddingService
@@ -169,12 +170,18 @@ async def vector_search(
     start = time.perf_counter()
     for attempt in range(max_retries + 1):
         try:
+            # Over-fetch for asymmetric indexing to preserve distinct doc count
+            if settings.feature_flags.asymmetric_indexing_enabled:
+                overfetch_limit = min(k * 3, 200)
+            else:
+                overfetch_limit = k
+                
             scored = await asyncio.wait_for(
                 qdrant_client.search(
                     collection_name=collection_name,
                     query_vector=vec.tolist(),
                     query_filter=qfilter,
-                    limit=k,
+                    limit=overfetch_limit,
                     with_payload=True,
                 ),
                 timeout=SEARCH_TIMEOUT_SECONDS,
@@ -214,18 +221,40 @@ async def vector_search(
     if not pairs:
         return []
 
-    titles = await _load_titles(session, [doc_id for doc_id, _ in pairs])
+    # Aggregate by doc_id: keep max score per document
+    best_scores: dict[UUID, float] = {}
+    best_order: list[UUID] = []
+    aggregation_used = False
+    
+    for doc_id, point in pairs:
+        score = point.score
+        if doc_id in best_scores:
+            aggregation_used = True
+            if score > best_scores[doc_id]:
+                best_scores[doc_id] = score
+        else:
+            best_scores[doc_id] = score
+            best_order.append(doc_id)
+    
+    # Emit aggregation metric if any doc had multiple chunks
+    if aggregation_used:
+        metrics.vector_search_chunk_aggregation_total.inc()
+    
+    # Load titles for distinct doc_ids only
+    titles = await _load_titles(session, best_order)
 
     hits: list[VectorHit] = []
-    for doc_id, point in pairs:
+    for doc_id in best_order:
         title, snippet = titles.get(doc_id, ("", ""))
-        raw_score = point.score
+        score = best_scores[doc_id]
         hits.append(
             VectorHit(
                 doc_id=doc_id,
-                score=(raw_score + 1) / 2,  # cosine [-1, 1] → [0, 1]
+                score=(score + 1) / 2,  # cosine [-1, 1] → [0, 1]
                 title=title,
                 content_snippet=snippet,
             )
         )
-    return hits
+    
+    # Truncate to original k after aggregation (preserve expected behavior)
+    return hits[:k]

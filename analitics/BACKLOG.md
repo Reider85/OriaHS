@@ -186,7 +186,7 @@ Critical
 | PR-10 | Adaptive K по `tenant_search_stats` (§5.2.10) | PR-02 | §6.4 | §5.2.10 | миграция `tenant_search_stats`, adaptive K_lexical/K_vector по doc_count и avg_query_len | ✅ done |
 | PR-11 | Инкрементальные фасеты (§5.2.11) | C-06 | §8.5 | §5.2.11 | Redis-кэш `facets:{query_hash}:{page}`, TTL 10 мин, incremental merge | ⏳ pending |
 | PR-12 | Многоязычность enhanced (§5.2.12) | — | §9.4, §9.3 | §5.2.12 | `fasttext-langid`, смешанные запросы token-level, транслитерация `cyrtranslit` | ⏳ pending |
-| PR-13 | Асимметричное индексирование (§5.2.13) | P-05 | §5.6 | §5.2.13 | chunking по 512 токенов overlap 50, взвешенное среднее секций (title × 3) | ⏳ pending |
+| PR-13 | Асимметричное индексирование (§5.2.13) | P-05 | §5.6 | §5.2.13 | chunking по 512 токенов overlap 50, взвешенное среднее секций (title × 3) | ✅ done |
 | PR-14 | Schema drift контракт-тесты (§5.2.14) | P-04 | §15.4 | §5.2.14 | CI gate: payload Qdrant ↔ documents Postgres, единый `QdrantPayload` | ⏳ pending |
 | PR-15 | Negative cache для embeddings (§5.2.15) | P-06 | §5.3 | §5.2.15 | Redis `null` cache TTL 60 сек для сломанных входов | ⏳ pending |
 

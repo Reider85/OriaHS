@@ -57,3 +57,47 @@ def test_extra_field_forbidden() -> None:
     data["extra_field"] = "x"
     with pytest.raises(ValidationError):
         QdrantPayload(**data)
+
+
+def test_chunk_fields_present_with_defaults() -> None:
+    """Test that chunk_idx and section_type are present with correct defaults."""
+    p = QdrantPayload(
+        doc_id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        language="en",
+        model_name="bge-m3-v1",
+        model_rev=1,
+        created_at=datetime(2026, 9, 19, 10, 0, 0, tzinfo=UTC),
+        content_hash="abc123",
+    )
+    
+    # Verify defaults
+    assert p.chunk_idx == 0
+    assert p.section_type is None
+    
+    # Verify they're in the dumped payload
+    dumped = p.model_dump(mode="json")
+    assert dumped["chunk_idx"] == 0
+    assert dumped["section_type"] is None
+
+
+def test_chunk_fields_explicit_values() -> None:
+    """Test that chunk_idx and section_type work with explicit values."""
+    p = QdrantPayload(
+        doc_id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        language="en",
+        model_name="bge-m3-v1",
+        model_rev=1,
+        created_at=datetime(2026, 9, 19, 10, 0, 0, tzinfo=UTC),
+        content_hash="abc123",
+        chunk_idx=5,
+        section_type="body",
+    )
+    
+    assert p.chunk_idx == 5
+    assert p.section_type == "body"
+    
+    dumped = p.model_dump(mode="json")
+    assert dumped["chunk_idx"] == 5
+    assert dumped["section_type"] == "body"
