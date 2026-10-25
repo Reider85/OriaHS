@@ -188,7 +188,7 @@ Critical
 | PR-12 | Многоязычность enhanced (§5.2.12) | — | §9.4, §9.3 | §5.2.12 | `fasttext-langid`, смешанные запросы token-level, транслитерация `cyrtranslit` | ⏳ pending |
 | PR-13 | Асимметричное индексирование (§5.2.13) | P-05 | §5.6 | §5.2.13 | chunking по 512 токенов overlap 50, взвешенное среднее секций (title × 3) | ✅ done |
 | PR-14 | Schema drift контракт-тесты (§5.2.14) | P-04 | §15.4 | §5.2.14 | CI gate: payload Qdrant ↔ documents Postgres, единый `QdrantPayload` | ✅ done |
-| PR-15 | Negative cache для embeddings (§5.2.15) | P-06 | §5.3 | §5.2.15 | Redis `null` cache TTL 60 сек для сломанных входов | ⏳ pending |
+| PR-15 | Negative cache для embeddings (§5.2.15) | P-06 | §5.3 | §5.2.15 | Redis `null` cache TTL 60 сек для сломанных входов | ✅ done |
 
 ### 3.2. TRIZ-gates Production-Ready (ROADMAP §10.3) — 15 gate'ов, все pending
 
@@ -208,7 +208,7 @@ Critical
 | §1 (Сегментация) | Смешанные запросы (token-level) | PR-12 | ⏳ pending |
 | §3 (Местное качество) | Асимметричное индексирование | PR-13 | ⏳ pending |
 | §35 (Изменение параметров) | NFC-нормализация | PR-12 | ⏳ pending |
-| §16 (Частичное/избыточное действие) | Negative cache | PR-15 | ⏳ pending |
+| §16 (Частичное/избыточное действие) | Negative cache | PR-15 | ✅ done |
 
 ### 3.3. DoD Production-Ready (ROADMAP §5.4)
 

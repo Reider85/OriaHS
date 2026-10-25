@@ -14,11 +14,13 @@ embedding models never serves stale vectors. Serialization is plain
 from __future__ import annotations
 
 import hashlib
+import secrets
 from collections.abc import Awaitable, Callable
 
 import numpy as np
 import redis.asyncio as aioredis
 
+from app.config import settings
 from app.observability import metrics
 from app.observability.tracing import get_tracer, span
 
@@ -36,6 +38,11 @@ def _serialize(vector: np.ndarray) -> bytes:
 
 def _deserialize(data: bytes) -> np.ndarray:
     return np.frombuffer(data, dtype=VECTOR_DTYPE)
+
+
+def text_sha256(text: str) -> str:
+    """Generate SHA256 hash for text (used for negative cache keys)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def should_skip_upsert(content_hash: str, existing_hash: str | None) -> bool:
@@ -60,6 +67,12 @@ class EmbeddingCache:
     def _query_key(query: str, model_name: str) -> str:
         digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
         return f"qemb:{model_name}:{digest}"
+
+    @staticmethod
+    def _negative_key(text: str, model_name: str) -> str:
+        """Generate negative cache key for text (ARCHITECT §5.3)."""
+        digest = text_sha256(text)
+        return f"neg:{model_name}:{digest}"
 
     async def get_by_content_hash(self, content_hash: str, model_name: str) -> np.ndarray | None:
         metrics.embedding_cache_requests_total.inc()
@@ -130,27 +143,150 @@ class EmbeddingCache:
         """cache-lookup → compute (misses only) → cache-store, in one batch."""
         if not texts:
             return []
+        
         hashes = [hashlib.sha256(text.encode("utf-8")).hexdigest() for text in texts]
         cached = await self.mget_by_content_hash([(hash_, model_name) for hash_ in hashes])
         results: list[np.ndarray | None] = list(cached)
         missing_idx = [i for i, value in enumerate(results) if value is None]
+        
         if missing_idx:
             missing_texts = [texts[i] for i in missing_idx]
-            computed = np.asarray(await compute_fn(missing_texts), dtype=VECTOR_DTYPE)
-            if computed.ndim == 1:
-                computed = computed.reshape(1, -1)
-            if computed.shape[0] != len(missing_idx):
-                raise ValueError(
-                    f"compute_fn returned {computed.shape[0]} vectors for {len(missing_idx)} texts"
-                )
-            async with self._redis.pipeline(transaction=False) as pipe:
-                for j, index in enumerate(missing_idx):
-                    pipe.set(
-                        self._content_hash_key(hashes[index], model_name),
-                        _serialize(computed[j]),
-                        ex=CONTENT_HASH_TTL_SECONDS,
+            
+            # Check negative cache for missing items
+            negative_hits = await self._mget_negative_cache(
+                [(text, model_name) for text in missing_texts]
+            )
+            
+            # Separate negative hits from valid computations
+            valid_missing_idx = []
+            valid_missing_texts = []
+            negative_indices = []
+            
+            for j, idx in enumerate(missing_idx):
+                if negative_hits[j]:
+                    # Negative cache hit - mark as None and set negative cache (if not already set)
+                    results[idx] = None
+                    negative_indices.append(idx)
+                else:
+                    # No negative cache hit - need to compute
+                    valid_missing_idx.append(idx)
+                    valid_missing_texts.append(missing_texts[j])
+            
+            # Set negative cache for items that were already negative hits (refresh TTL)
+            if negative_indices:
+                negative_items = [
+                    (texts[i], model_name) for i in negative_indices
+                ]
+                await self._set_negative_cache_many(negative_items)
+            
+            # Compute only valid items
+            if valid_missing_texts:
+                computed = np.asarray(await compute_fn(valid_missing_texts), dtype=VECTOR_DTYPE)
+                if computed.ndim == 1:
+                    computed = computed.reshape(1, -1)
+                if computed.shape[0] != len(valid_missing_idx):
+                    raise ValueError(
+                        f"compute_fn returned {computed.shape[0]} vectors for {len(valid_missing_idx)} texts"
                     )
-                await pipe.execute()
-            for j, index in enumerate(missing_idx):
-                results[index] = computed[j]
+                
+                # Validate computed vectors and cache/store valid ones
+                async with self._redis.pipeline(transaction=False) as pipe:
+                    for j, idx in enumerate(valid_missing_idx):
+                        vector = computed[j]
+                        # Check for NaN/Inf vectors (invalid)
+                        if not np.isfinite(vector).all():
+                            # Set negative cache for invalid vector
+                            await self.set_negative_cache(texts[idx], model_name)
+                            results[idx] = None
+                        else:
+                            # Cache valid vector
+                            pipe.set(
+                                self._content_hash_key(hashes[idx], model_name),
+                                _serialize(vector),
+                                ex=CONTENT_HASH_TTL_SECONDS,
+                            )
+                            results[idx] = vector
+                    await pipe.execute()
+        
         return [result for result in results if result is not None]
+
+    async def get_negative_cache(self, text: str, model_name: str) -> bool:
+        """Check if text is cached as negative (broken/invalid).
+        
+        Returns True if negative cache hit, False if miss or disabled.
+        """
+        if not settings.feature_flags.negative_cache_enabled:
+            return False
+        
+        key = self._negative_key(text, model_name)
+        raw = await self._redis.get(key)
+        if raw is not None:
+            metrics.record_negative_cache_event(hit=True)
+            return True
+        metrics.record_negative_cache_event(hit=False)
+        return False
+
+    async def set_negative_cache(self, text: str, model_name: str) -> None:
+        """Cache text as negative (broken/invalid) with TTL.
+        
+        TTL includes jitter (±10s) to avoid thundering herd.
+        """
+        if not settings.feature_flags.negative_cache_enabled:
+            return
+        
+        key = self._negative_key(text, model_name)
+        ttl = settings.negative_cache.null_ttl_seconds
+        jitter = secrets.randbelow(21) - 10  # -10 to +10 seconds
+        final_ttl = max(1, ttl + jitter)  # Ensure positive TTL
+        
+        await self._redis.set(key, "null", ex=final_ttl)
+        metrics.negative_cache_sets_total.inc()
+
+    async def clear_negative_cache(self, text: str, model_name: str) -> None:
+        """Remove negative cache entry for text (if any)."""
+        key = self._negative_key(text, model_name)
+        await self._redis.delete(key)
+
+    async def _mget_negative_cache(
+        self, items: list[tuple[str, str]]
+    ) -> list[bool]:
+        """Batch negative cache lookup; one round-trip.
+        
+        Returns True for negative cache hits, False for misses.
+        """
+        if not settings.feature_flags.negative_cache_enabled:
+            return [False] * len(items)
+        
+        keys = [self._negative_key(text, model) for text, model in items]
+        raw_values = await self._redis.mget(keys)
+        
+        hits = 0
+        results: list[bool] = []
+        for raw in raw_values:
+            if raw is not None:
+                results.append(True)
+                hits += 1
+            else:
+                results.append(False)
+        
+        for hit in results:
+            metrics.record_negative_cache_event(hit=hit)
+        
+        return results
+
+    async def _set_negative_cache_many(
+        self, items: list[tuple[str, str]]
+    ) -> None:
+        """Batch negative cache set; one round-trip."""
+        if not settings.feature_flags.negative_cache_enabled:
+            return
+        
+        async with self._redis.pipeline(transaction=False) as pipe:
+            for text, model_name in items:
+                key = self._negative_key(text, model_name)
+                ttl = settings.negative_cache.null_ttl_seconds
+                jitter = secrets.randbelow(21) - 10  # -10 to +10 seconds
+                final_ttl = max(1, ttl + jitter)
+                pipe.set(key, "null", ex=final_ttl)
+                metrics.negative_cache_sets_total.inc()
+            await pipe.execute()

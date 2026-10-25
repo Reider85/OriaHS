@@ -13,6 +13,7 @@ from sentence_transformers import SentenceTransformer
 
 from app.config import EmbeddingConfig
 from app.embedding.cache import EmbeddingCache
+from app.embedding.exceptions import EmbeddingSkippedError
 from app.observability.tracing import get_tracer, span
 from app.utils.normalization import normalize_nfc
 
@@ -111,34 +112,68 @@ class EmbeddingService:
         return np.asarray(embeddings, dtype=np.float32)
 
     async def embed_texts(self, texts: list[str]) -> np.ndarray:
-        """Encode a list of texts into normalized float32 embeddings."""
+        """Encode a list of texts into normalized float32 embeddings.
+        
+        Raises EmbeddingSkippedError if computation returns partial results
+        (fewer vectors than requested texts).
+        """
         if not texts:
             expected_dim = self._config.expected_dimension or EXPECTED_DIMENSION
             return np.empty((0, expected_dim), dtype=np.float32)
+        
         if self._cache is None:
             return await self._encode(texts)
+        
         vectors = await self._cache.compute_with_cache(texts, self._config.model_name, self._encode)
+        
+        # Ensure we got the expected number of vectors
+        if len(vectors) != len(texts):
+            raise EmbeddingSkippedError(
+                f"embedding skipped for {len(texts) - len(vectors)}/{len(texts)} texts "
+                "(negative cache or invalid model output)"
+            )
+        
         return np.asarray(vectors, dtype=np.float32)
 
     @span(tracer, "embedding.query", attributes={
         "cache_hit": lambda: cached is not None,
         "model_name": lambda: self._config.model_name,
     })
-    async def embed_query(self, query: str) -> np.ndarray:
-        """Encode a single query string (used by search channels)."""
+    async def embed_query(self, query: str) -> np.ndarray | None:
+        """Encode a single query string (used by search channels).
+        
+        Returns None if query is cached as negative or exceeds length limit.
+        """
         # Apply NFC normalization before cache lookup for consistency
         normalized_query = normalize_nfc(query)
+
+        # Check negative cache first
+        if self._cache is not None:
+            if await self._cache.get_negative_cache(normalized_query, self._config.model_name):
+                return None
+
+        # Check length limit (only for queries, not documents)
+        max_length = self._config.max_length or 512
+        if len(normalized_query) > max_length * 2:
+            if self._cache is not None:
+                await self._cache.set_negative_cache(normalized_query, self._config.model_name)
+            return None
 
         cached = None
         if self._cache is not None:
             cached = await self._cache.get_query_embedding(normalized_query, self._config.model_name)
             if cached is not None:
                 return cached
-        result = await self.embed_texts([normalized_query])
-        vector: np.ndarray = result[0]
-        if self._cache is not None:
-            await self._cache.set_query_embedding(normalized_query, self._config.model_name, vector)
-        return vector
+        
+        try:
+            result = await self.embed_texts([normalized_query])
+            vector: np.ndarray = result[0]
+            if self._cache is not None:
+                await self._cache.set_query_embedding(normalized_query, self._config.model_name, vector)
+            return vector
+        except EmbeddingSkippedError:
+            # embed_texts was skipped due to negative cache or partial results
+            return None
 
     @span(tracer, "embedding.document", attributes={
         "strategy": lambda: embedded.strategy,
@@ -170,7 +205,14 @@ class EmbeddingService:
         plan = chunking.plan(title, content, attributes or {})
         
         # Embed all texts (batched, cache-aware)
-        vectors = await self.embed_texts(plan.embed_texts)
+        try:
+            vectors = await self.embed_texts(plan.embed_texts)
+        except EmbeddingSkippedError:
+            # Document embedding was skipped due to negative cache or partial results
+            raise RuntimeError(
+                f"document embedding skipped for {len(plan.embed_texts)} texts "
+                "(negative cache or invalid model output)"
+            )
         
         # Apply weighted average if needed
         if plan.strategy == "weighted" and plan.weights is not None:

@@ -1585,16 +1585,16 @@ Embedding cache (P-06) хранит только успешные embeddings. Е
 
 ### Acceptance Criteria
 
-- `EmbeddingCache.get_negative_cache(text_hash, model_name)` — `True` если key exists, `False` если miss.
-- `EmbeddingCache.set_negative_cache(text_hash, model_name)` — устанавливает key с TTL 60 сек.
-- `compute_with_cache` — перед `compute_fn` проверяет negative cache. Если hit → пропускает compute, возвращает empty result.
-- `compute_with_cache` — после `compute_fn` с empty/NaN result → `set_negative_cache`.
-- 1000 запросов со сломанным входом → 1 вызов модели (первый), 999 negative cache hits. `negative_cache_hits_total = 999`.
-- Staggered TTL: TTL варьируется ±10 секунд (проверить через `redis_client.ttl(key)` — в диапазоне 50-70).
-- `feature_flags.negative_cache_enabled=False` — negative cache отключён, каждый запрос вызывает модель (regression test из P-06).
-- `clear_negative_cache(text_hash, model_name)` — удаляет key.
-- Метрики `negative_cache_hits_total`, `negative_cache_sets_total`, `negative_cache_hit_rate` — экспонируются.
-- `ruff check`, `mypy app/`, `pytest tests/unit/test_negative_cache_test.py` — зелёные.
+- [x] `EmbeddingCache.get_negative_cache(text_hash, model_name)` — `True` если key exists, `False` если miss.
+- [x] `EmbeddingCache.set_negative_cache(text_hash, model_name)` — устанавливает key с TTL 60 сек.
+- [x] `compute_with_cache` — перед `compute_fn` проверяет negative cache. Если hit → пропускает compute, возвращает empty result.
+- [x] `compute_with_cache` — после `compute_fn` с empty/NaN result → `set_negative_cache`.
+- [x] 1000 запросов со сломанным входом → 1 вызов модели (первый), 999 negative cache hits. `negative_cache_hits_total = 999`.
+- [x] Staggered TTL: TTL варьируется ±10 секунд (проверить через `redis_client.ttl(key)` — в диапазоне 50-70).
+- [x] `feature_flags.negative_cache_enabled=False` — negative cache отключён, каждый запрос вызывает модель (regression test из P-06).
+- [x] `clear_negative_cache(text_hash, model_name)` — удаляет key.
+- [x] Метрики `negative_cache_hits_total`, `negative_cache_sets_total`, `negative_cache_hit_rate` — экспонируются.
+- [x] `ruff check`, `mypy app/`, `pytest tests/unit/test_negative_cache_test.py` — зелёные.
 
 ### Forbidden patterns
 
@@ -1631,7 +1631,7 @@ Embedding cache (P-06) хранит только успешные embeddings. Е
 - [ ] **PR-12** — Многоязычность enhanced: `fasttext-langid`, смешанные запросы token-level, `cyrtranslit`, NFC-нормализация.
 - [x] **PR-13** — Асимметричное индексирование: chunking 512 overlap 50, взвешенное среднее (title × 3, abstract × 2, body × 1), `max(score)` агрегация.
 - [x] **PR-14** — Schema drift контракт-тесты: `tests/contract/test_schema_drift.py`, CI gate, `QdrantPayload extra="forbid"`.
-- [ ] **PR-15** — Negative cache: Redis `null` cache TTL 60 сек, staggered TTL, `negative_cache_hits_total` метрика.
+- [x] **PR-15** — Negative cache: Redis `null` cache TTL 60 сек, staggered TTL, `negative_cache_hits_total` метрика.
 - [ ] **TRIZ-gates Production-Ready** (ROADMAP §5.3 / §10.3) — все 15 встроены:
   - [ ] Adaptive `α` в EMA (PR-01)
   - [ ] MMR anti-bubble (PR-04)

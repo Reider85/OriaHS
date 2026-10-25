@@ -7,7 +7,7 @@ score normalization and timeout propagation.
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
@@ -209,7 +209,7 @@ async def test_results_sorted_by_score_desc_and_k_forwarded() -> None:
         )
         call = client.search.await_args
         assert call.kwargs["limit"] == 15  # k*3 = 15
-        
+
         # Test flag off
         mock_settings.feature_flags.asymmetric_indexing_enabled = False
         # Create new service instance with updated settings
@@ -234,7 +234,7 @@ async def test_vector_search_aggregates_duplicate_doc_ids() -> None:
     """Test that vector search aggregates max(score) for duplicate doc_ids."""
     tenant = uuid.uuid4()
     doc_id = str(uuid.uuid4())
-    
+
     # Return 3 points for the same doc_id with different scores
     client = MagicMock()
     client.search = AsyncMock(
@@ -247,7 +247,7 @@ async def test_vector_search_aggregates_duplicate_doc_ids() -> None:
     cache = MagicMock(spec=EmbeddingCache)
     cache.get_query_embedding = AsyncMock(return_value=await _hit_vector())
     service = MagicMock(spec=EmbeddingService)
-    
+
     # Mock session to return title for the doc_id
     session = _fake_session({doc_id: {"title": "Test Doc", "snippet": "Test snippet"}})
 
@@ -263,7 +263,7 @@ async def test_vector_search_aggregates_duplicate_doc_ids() -> None:
         model_name="bge-m3",
         k=5,
     )
-    
+
     # Should have only 1 hit (aggregated to max score)
     assert len(hits) == 1
     assert hits[0].doc_id == uuid.UUID(doc_id)
@@ -275,7 +275,7 @@ async def test_vector_search_no_aggregation_for_unique_docs() -> None:
     """Test that vector search doesn't aggregate when all doc_ids are unique."""
     tenant = uuid.uuid4()
     doc_a, doc_b, doc_c = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
-    
+
     client = MagicMock()
     client.search = AsyncMock(
         return_value=[
@@ -287,7 +287,7 @@ async def test_vector_search_no_aggregation_for_unique_docs() -> None:
     cache = MagicMock(spec=EmbeddingCache)
     cache.get_query_embedding = AsyncMock(return_value=await _hit_vector())
     service = MagicMock(spec=EmbeddingService)
-    
+
     # Mock session to return titles
     session = _fake_session({
         doc_a: {"title": "Doc A", "snippet": "Snippet A"},
@@ -307,7 +307,7 @@ async def test_vector_search_no_aggregation_for_unique_docs() -> None:
         model_name="bge-m3",
         k=5,
     )
-    
+
     # Should have 3 hits (no aggregation needed)
     assert len(hits) == 3
     assert {hit.doc_id for hit in hits} == {uuid.UUID(doc_a), uuid.UUID(doc_b), uuid.UUID(doc_c)}
@@ -317,7 +317,7 @@ async def test_vector_search_truncates_to_k_after_aggregation() -> None:
     """Test that search returns at most k hits after aggregation."""
     tenant = uuid.uuid4()
     doc_a, doc_b, doc_c, doc_d = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
-    
+
     # Return 4 points: 2 for doc_a, 1 for doc_b, 1 for doc_c (should aggregate to 3)
     client = MagicMock()
     client.search = AsyncMock(
@@ -331,7 +331,7 @@ async def test_vector_search_truncates_to_k_after_aggregation() -> None:
     cache = MagicMock(spec=EmbeddingCache)
     cache.get_query_embedding = AsyncMock(return_value=await _hit_vector())
     service = MagicMock(spec=EmbeddingService)
-    
+
     # Mock session to return titles
     session = _fake_session({
         doc_a: {"title": "Doc A", "snippet": "Snippet A"},
@@ -351,7 +351,7 @@ async def test_vector_search_truncates_to_k_after_aggregation() -> None:
         model_name="bge-m3",
         k=2,  # Request top 2
     )
-    
+
     # Should have 2 hits (aggregated then truncated to k)
     assert len(hits) == 2
     # Should be doc_a (with max score) and doc_b
@@ -461,3 +461,75 @@ async def test_empty_result_returns_empty_list() -> None:
 
 def test_snippet_length_constant() -> None:
     assert SNIPPET_LENGTH == 200
+
+
+def test_embed_query_none_returns_empty() -> None:
+    """Test that embed_query returning None (negative cache) returns empty results."""
+    # Mock embedding service that returns None (negative cache hit)
+    mock_service = MagicMock(spec=EmbeddingService)
+    mock_service.embed_query = AsyncMock(return_value=None)
+
+    # Mock embedding cache
+    mock_cache = MagicMock(spec=EmbeddingCache)
+    mock_cache.get_query_embedding = AsyncMock(return_value=None)
+
+    # Mock Qdrant client
+    mock_client = AsyncMock()
+    mock_client.search = AsyncMock(return_value=[])
+
+    # Call vector search
+    hits = vector_search(
+        qdrant_client=mock_client,
+        embedding_service=mock_service,
+        embedding_cache=mock_cache,
+        query="negative cache hit",
+        tenant_id=uuid.uuid4(),
+        filters=SearchFilters(),
+        collection_name="test_collection",
+        model_name="bge-m3",
+    )
+
+    # Should return empty results
+    assert hits == []
+
+
+@pytest.mark.asyncio
+async def test_negative_cache_skip():
+    """Vector search returns [] when embed_query returns None (negative cache hit)."""
+    from app.config import settings
+    
+    # Mock session
+    mock_session = AsyncMock()
+    
+    # Enable negative cache
+    with patch.object(settings.feature_flags, 'vector_search_enabled', True):
+        # Mock embedding service that returns None (negative cache hit)
+        mock_service = MagicMock(spec=EmbeddingService)
+        mock_service.embed_query = AsyncMock(return_value=None)
+        
+        # Mock embedding cache
+        mock_cache = MagicMock(spec=EmbeddingCache)
+        mock_cache.get_query_embedding = AsyncMock(return_value=None)
+        
+        # Mock Qdrant client
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=[])
+        
+        # Call vector search
+        hits = await vector_search(
+            session=mock_session,
+            qdrant_client=mock_client,
+            embedding_service=mock_service,
+            embedding_cache=mock_cache,
+            query="negative cache hit",
+            tenant_id=uuid.uuid4(),
+            filters=SearchFilters(),
+            collection_name="test_collection",
+            model_name="bge-m3",
+        )
+        
+        # Should return empty results
+        assert hits == []
+
+    # Should not have called Qdrant search
+    mock_client.search.assert_not_called()

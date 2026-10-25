@@ -78,6 +78,61 @@ embedding_cache_requests_total = Counter(
 )
 
 # ---------------------------------------------------------------------------
+# Negative cache metrics — filled by EmbeddingCache (P-15)
+# ---------------------------------------------------------------------------
+negative_cache_hits_total = Counter(
+    "negative_cache_hits_total",
+    "Total negative cache lookups that returned a cached null result.",
+)
+
+negative_cache_sets_total = Counter(
+    "negative_cache_sets_total",
+    "Total negative cache entries set (broken/invalid text entries).",
+)
+
+negative_cache_misses_total = Counter(
+    "negative_cache_misses_total",
+    "Total negative cache lookups that missed (not found in negative cache).",
+)
+
+# Negative cache hit rate gauge (updated on each lookup)
+_negative_cache_hits = 0
+_negative_cache_misses = 0
+
+negative_cache_hit_rate = Gauge(
+    "negative_cache_hit_rate",
+    "Negative cache hit rate (hits / (hits + misses)).",
+)
+
+
+def record_negative_cache_event(hit: bool) -> None:
+    """Record negative cache lookup event (hit or miss).
+    
+    Updates the hit rate gauge accordingly.
+    """
+    global _negative_cache_hits, _negative_cache_misses
+    
+    if hit:
+        _negative_cache_hits += 1
+        negative_cache_hits_total.inc()
+    else:
+        _negative_cache_misses += 1
+        negative_cache_misses_total.inc()
+    
+    total = _negative_cache_hits + _negative_cache_misses
+    if total > 0:
+        rate = _negative_cache_hits / total
+        negative_cache_hit_rate.set(rate)
+
+
+def reset_negative_cache_stats() -> None:
+    """Reset negative cache metrics (for testing)."""
+    global _negative_cache_hits, _negative_cache_misses
+    _negative_cache_hits = 0
+    _negative_cache_misses = 0
+    negative_cache_hit_rate.set(0.0)
+
+# ---------------------------------------------------------------------------
 # OpenTelemetry tracing metrics — incremented by CountingSpanExporter
 # ---------------------------------------------------------------------------
 otel_spans_exported_total = Counter(
@@ -467,6 +522,10 @@ __all__ = [
     "shadow_traffic_total",
     "shadow_traffic_errors_total",
     "shadow_traffic_latency_ms",
+    # Negative cache metrics (PR-15)
+    "negative_cache_hits_total",
+    "negative_cache_sets_total",
+    "negative_cache_hit_rate",
 ]
 
 
